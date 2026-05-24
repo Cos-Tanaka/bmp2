@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    container_name: bpm-backend
+    restart: unless-stopped
+    environment:
+      - BACKLOG_SPACE=${BACKLOG_SPACE}        # 例: yourspace.backlog.com
+      - BACKLOG_API_KEY=${BACKLOG_API_KEY}    # Backlog API キー
+      - BACKLOG_PROJECT_KEY=${BACKLOG_PROJECT_KEY}  # 例: ASPIT
+      - CACHE_TTL=${CACHE_TTL:-60}            # キャッシュ秒数（デフォルト60秒）
+    networks:
+      - bpm-net
+
+  frontend:
+    build: ./frontend
+    container_name: bpm-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3031:80"
+    networks:
+      - bpm-net
+
+networks:
+  bpm-net:
+    driver: bridge

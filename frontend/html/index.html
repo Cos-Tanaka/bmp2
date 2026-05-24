@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BPM / 進捗監視盤</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #1c2128; --bg4: #21262d;
+    --border: #30363d; --border2: #3d444d;
+    --text: #e6edf3; --text2: #8d96a0; --text3: #6e7681;
+    --accent: #388bfd; --accent2: #1f6feb;
+    --green: #3fb950; --yellow: #d29922; --red: #f85149; --purple: #a371f7;
+    --font: 'Noto Sans JP', sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; min-height: 100vh; }
+
+  /* Header */
+  .header {
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    padding: 12px 24px; display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--accent); letter-spacing: .05em; }
+  .logo span { color: var(--text2); font-weight: 400; }
+  .project-badge {
+    background: var(--bg4); border: 1px solid var(--border2);
+    border-radius: 6px; padding: 3px 10px; font-size: 12px; color: var(--text2); margin-left: 14px;
+  }
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  .sync-info { font-family: var(--mono); font-size: 11px; color: var(--text3); }
+  .sync-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--green);
+    display: inline-block; margin-right: 6px; box-shadow: 0 0 6px var(--green);
+  }
+  .sync-dot.error { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .sync-dot.loading { background: var(--yellow); animation: blink 1s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .btn-refresh {
+    background: var(--bg4); border: 1px solid var(--border2); border-radius: 6px;
+    color: var(--text2); padding: 4px 12px; font-size: 12px; cursor: pointer;
+    font-family: var(--font); transition: .15s;
+  }
+  .btn-refresh:hover { border-color: var(--accent); color: var(--text); }
+
+  /* Summary */
+  .summary-bar { padding: 16px 24px; display: flex; gap: 12px; border-bottom: 1px solid var(--border); }
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; flex: 1; }
+  .card-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+  .card-value { font-family: var(--mono); font-size: 22px; font-weight: 600; line-height: 1; }
+  .card-sub { font-size: 11px; color: var(--text3); margin-top: 4px; }
+  .val-blue{color:var(--accent)} .val-yellow{color:var(--yellow)} .val-red{color:var(--red)} .val-green{color:var(--green)}
+
+  /* Filter */
+  .filter-bar {
+    padding: 10px 24px; display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .filter-label { font-size: 11px; color: var(--text3); }
+  .chip {
+    background: var(--bg4); border: 1px solid var(--border2); border-radius: 20px;
+    padding: 3px 12px; font-size: 11px; cursor: pointer; color: var(--text2); transition: .15s;
+  }
+  .chip:hover { border-color: var(--accent); color: var(--text); }
+  .chip.active { background: var(--accent2); border-color: var(--accent); color: #fff; }
+  .filter-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+  .select-filter {
+    background: var(--bg4); border: 1px solid var(--border2); border-radius: 6px;
+    color: var(--text2); padding: 3px 8px; font-size: 11px; cursor: pointer;
+    font-family: var(--font); outline: none; transition: .15s;
+  }
+  .select-filter:hover { border-color: var(--accent); color: var(--text); }
+
+  /* Table */
+  .table-wrap { padding: 0 24px 32px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+  thead th {
+    background: var(--bg2); border-bottom: 1px solid var(--border2); border-top: 1px solid var(--border2);
+    padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 500;
+    color: var(--text3); text-transform: uppercase; letter-spacing: .05em; white-space: nowrap;
+    position: sticky; top: 53px; z-index: 10;
+  }
+  .row-parent td {
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    padding: 10px 12px; vertical-align: middle;
+  }
+  .row-parent:hover td { background: var(--bg3); }
+  .row-parent.expanded td { background: var(--bg3); border-bottom: none; }
+  .row-child td {
+    background: var(--bg); border-bottom: 1px solid var(--border);
+    padding: 8px 12px; vertical-align: middle; font-size: 12px;
+  }
+  .row-child:hover td { background: var(--bg2); }
+  .row-child td:first-child { padding-left: 36px; border-left: 2px solid var(--border2); }
+  .row-child.last-child td { border-bottom: 2px solid var(--border2); }
+
+  .toggle-btn {
+    background: none; border: none; color: var(--text2); cursor: pointer;
+    font-size: 14px; width: 20px; text-align: center; transition: transform .2s;
+    display: inline-block; line-height: 1; padding: 0; vertical-align: middle;
+  }
+  .toggle-btn.open { transform: rotate(90deg); }
+
+  .issue-key { font-family: var(--mono); font-size: 11px; color: var(--accent); white-space: nowrap; margin-right: 8px; }
+  .issue-title { color: var(--text); font-weight: 500; }
+  .issue-title-child { color: var(--text2); }
+
+  .avatar {
+    width: 22px; height: 22px; border-radius: 50%; font-size: 10px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-right: 6px; vertical-align: middle; background: rgba(56,139,253,.2); color: var(--accent);
+  }
+
+  .date-range { font-family: var(--mono); font-size: 11px; color: var(--text2); white-space: nowrap; }
+  .date-range .sep { color: var(--text3); margin: 0 4px; }
+
+  .hours-cell { font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+  .hours-plan { color: var(--text2); } .hours-actual { color: var(--text); }
+
+  .diff-cell { font-family: var(--mono); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .diff-over{color:var(--red)} .diff-ok{color:var(--green)} .diff-warn{color:var(--yellow)}
+
+  .progress-wrap { min-width: 120px; }
+  .progress-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+  .progress-row:last-child { margin-bottom: 0; }
+  .progress-label { font-size: 10px; color: var(--text3); width: 20px; flex-shrink: 0; }
+  .progress-bar-bg { flex: 1; height: 5px; background: var(--bg4); border-radius: 3px; overflow: hidden; }
+  .progress-bar-fill { height: 100%; border-radius: 3px; transition: width .5s ease; }
+  .bar-plan { background: var(--accent); opacity: .5; }
+  .bar-actual { background: var(--green); }
+  .bar-actual-warn { background: var(--yellow); }
+  .bar-actual-over { background: var(--red); }
+  .progress-pct { font-family: var(--mono); font-size: 10px; color: var(--text2); width: 30px; text-align: right; flex-shrink: 0; }
+
+  .status-badge { border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 500; white-space: nowrap; display: inline-block; }
+  .s-1  { background: rgba(56,139,253,.15); color: var(--accent); border: 1px solid rgba(56,139,253,.3); }
+  .s-2  { background: rgba(163,113,247,.15); color: var(--purple); border: 1px solid rgba(163,113,247,.3); }
+  .s-3  { background: rgba(63,185,80,.15); color: var(--green); border: 1px solid rgba(63,185,80,.3); }
+  .s-4  { background: rgba(210,153,34,.15); color: var(--yellow); border: 1px solid rgba(210,153,34,.3); }
+  .s-default { background: rgba(110,118,129,.15); color: var(--text3); border: 1px solid var(--border2); }
+
+  .count-badge {
+    background: var(--bg4); border: 1px solid var(--border2); border-radius: 10px;
+    padding: 1px 7px; font-size: 10px; color: var(--text3); margin-left: 6px; font-family: var(--mono);
+  }
+  .health { font-size: 16px; text-align: center; }
+
+  /* 状態表示 */
+  .state-overlay {
+    padding: 60px; text-align: center; color: var(--text3);
+  }
+  .state-overlay .icon { font-size: 32px; margin-bottom: 12px; }
+  .state-overlay .msg { font-size: 14px; }
+  .state-overlay .sub { font-size: 12px; margin-top: 6px; color: var(--text3); }
+  .spinner {
+    width: 28px; height: 28px; border: 3px solid var(--border2);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin .8s linear infinite; margin: 0 auto 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div style="display:flex;align-items:center">
+    <div class="logo">BPM<span> / 進捗監視盤</span></div>
+    <div class="project-badge" id="projectBadge">読込中...</div>
+  </div>
+  <div class="header-right">
+    <span class="sync-info"><span class="sync-dot loading" id="syncDot"></span><span id="syncText">取得中...</span></span>
+    <button class="btn-refresh" onclick="fetchData(true)">↻ 更新</button>
+  </div>
+</header>
+
+<div class="summary-bar">
+  <div class="card">
+    <div class="card-label">案件数</div>
+    <div class="card-value val-blue" id="cntTotal">—</div>
+    <div class="card-sub" id="cntSub">—</div>
+  </div>
+  <div class="card">
+    <div class="card-label">予定工数合計</div>
+    <div class="card-value" id="cntPlanned">— <span style="font-size:14px;color:var(--text3)">h</span></div>
+    <div class="card-sub" id="cntPlannedSub">—</div>
+  </div>
+  <div class="card">
+    <div class="card-label">実績工数合計</div>
+    <div class="card-value" id="cntActual">— <span style="font-size:14px;color:var(--text3)">h</span></div>
+    <div class="card-sub" id="cntActualSub">—</div>
+  </div>
+  <div class="card">
+    <div class="card-label">予実差</div>
+    <div class="card-value" id="cntDiff">—</div>
+    <div class="card-sub" id="cntDiffSub">—</div>
+  </div>
+  <div class="card">
+    <div class="card-label">健全性</div>
+    <div class="card-value" id="cntHealth" style="font-size:18px;padding-top:2px">—</div>
+    <div class="card-sub" id="cntHealthSub">—</div>
+  </div>
+</div>
+
+<div class="filter-bar">
+  <span class="filter-label">健全性</span>
+  <button class="chip active" onclick="setFilter('health','all',this)">すべて</button>
+  <button class="chip" onclick="setFilter('health','green',this)">🟢 正常</button>
+  <button class="chip" onclick="setFilter('health','yellow',this)">🟡 注意</button>
+  <button class="chip" onclick="setFilter('health','red',this)">🔴 危険</button>
+  <div class="filter-sep"></div>
+  <span class="filter-label">状態</span>
+  <button class="chip" id="filterWip" onclick="toggleStatusFilter('wip',this)">対応中</button>
+  <button class="chip" id="filterDone" onclick="toggleStatusFilter('done',this)">完了</button>
+  <div class="filter-sep"></div>
+  <span class="filter-label">担当者</span>
+  <select class="select-filter" id="assigneeFilter" onchange="setAssigneeFilter(this.value)">
+    <option value="all">すべて</option>
+  </select>
+  <div class="filter-sep"></div>
+  <span class="filter-label">子課題ソート</span>
+  <select class="select-filter" id="childSortFilter" onchange="setChildSortFilter(this.value)">
+    <option value="assignee-date">担当者 ➔ 期間</option>
+    <option value="date-assignee">期間 ➔ 担当者</option>
+  </select>
+</div>
+<div class="filter-bar" style="border-top:none">
+  <span class="filter-label">ステータス</span>
+  <button class="chip active" onclick="setCustomStatusFilter('all',this)">すべて</button>
+  <button class="chip" onclick="setCustomStatusFilter('見積',this)">概算見積</button>
+  <button class="chip" onclick="setCustomStatusFilter('設計',this)">基本設計</button>
+  <button class="chip" onclick="setCustomStatusFilter('正式',this)">正式見積</button>
+  <button class="chip" onclick="setCustomStatusFilter('開発',this)">開発中</button>
+  <button class="chip" onclick="setCustomStatusFilter('テスト',this)">テストリリース済み</button>
+  <button class="chip" onclick="setCustomStatusFilter('本番',this)">本番リリース済み</button>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:36px"></th>
+        <th style="min-width:260px">案件 / 課題</th>
+        <th>担当者</th>
+        <th>期間</th>
+        <th style="text-align:right">予定(h)</th>
+        <th style="text-align:right">実績(h)</th>
+        <th style="text-align:right">差分(h)</th>
+        <th style="min-width:140px">進捗（予定/実績）</th>
+        <th>状態</th>
+        <th>ステータス</th>
+        <th>健全性</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+</div>
+
+<script>
+// ── 状態 ──────────────────────────────────────────
+let allData = [];
+let filter = { health: 'all', status: null, assignee: 'all', customStatus: 'all', childSort: 'assignee-date' };
+const POLL_MS = 60000; // 60秒ポーリング
+
+// ── API 取得 ──────────────────────────────────────
+async function fetchData(force = false) {
+  setSyncState('loading');
+  try {
+    const url = '/api/issues' + (force ? '?t=' + Date.now() : '');
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    allData = await res.json();
+    updateAssigneeFilter();
+    updateSummary();
+    renderTable();
+    setSyncState('ok');
+  } catch (e) {
+    setSyncState('error', e.message);
+  }
+}
+
+function setSyncState(state, msg = '') {
+  const dot  = document.getElementById('syncDot');
+  const text = document.getElementById('syncText');
+  dot.className = 'sync-dot';
+  if (state === 'loading') {
+    dot.classList.add('loading');
+    text.textContent = '取得中...';
+  } else if (state === 'ok') {
+    text.textContent = '最終同期: ' + new Date().toLocaleTimeString('ja-JP');
+  } else {
+    dot.classList.add('error');
+    text.textContent = 'エラー: ' + msg;
+  }
+}
+
+// ── サマリー ──────────────────────────────────────
+function updateSummary() {
+  const total   = allData.length;
+  const done    = allData.filter(r => isParentDone(r)).length;
+  const wip     = allData.filter(r => !isParentDone(r)).length;
+  const planned = allData.reduce((s, r) => s + r.plannedH, 0);
+  const actual  = allData.reduce((s, r) => s + r.actualH,  0);
+  const diff    = actual - planned;
+  const green   = allData.filter(r => r.health === 'green').length;
+  const yellow  = allData.filter(r => r.health === 'yellow').length;
+  const red     = allData.filter(r => r.health === 'red').length;
+
+  // プロジェクトバッジ
+  document.getElementById('projectBadge').textContent =
+    allData.length ? allData[0].id.split('-')[0] + ' プロジェクト' : '';
+
+  setText('cntTotal', total, 'val-blue');
+  document.getElementById('cntSub').textContent = `進行中 ${wip} ／ 完了 ${done}`;
+
+  setText('cntPlanned', planned + ' ', '');
+  document.getElementById('cntPlannedSub').textContent = `子課題 ${allData.reduce((s,r)=>s+r.children.length,0)} 件の合計`;
+
+  const actualEl = document.getElementById('cntActual');
+  actualEl.innerHTML = actual + ' <span style="font-size:14px;color:var(--text3)">h</span>';
+  actualEl.className = 'card-value ' + (actual > planned ? 'val-yellow' : 'val-green');
+  document.getElementById('cntActualSub').textContent = planned > 0 ? `消化率 ${Math.round(actual/planned*100)}%` : '';
+
+  const diffEl = document.getElementById('cntDiff');
+  diffEl.innerHTML = (diff >= 0 ? '+' : '') + diff + ' <span style="font-size:14px;color:var(--text3)">h</span>';
+  diffEl.className = 'card-value ' + (diff > 0 ? 'val-red' : 'val-green');
+  document.getElementById('cntDiffSub').textContent = red + ' 案件が超過中';
+
+  document.getElementById('cntHealth').innerHTML =
+    `🟢<span style="font-size:13px;color:var(--text2)"> ${green}</span>&nbsp;` +
+    `🟡<span style="font-size:13px;color:var(--text2)"> ${yellow}</span>&nbsp;` +
+    `🔴<span style="font-size:13px;color:var(--text2)"> ${red}</span>`;
+  document.getElementById('cntHealthSub').textContent = `要確認 ${red} 件`;
+}
+
+function setText(id, val, cls) {
+  const el = document.getElementById(id);
+  el.textContent = val;
+  if (cls) el.className = 'card-value ' + cls;
+}
+
+// ── テーブル描画 ──────────────────────────────────
+function isParentDone(row) {
+  return row.children.length > 0 && row.children.every(c => c.statusId === 3);
+}
+
+function planProgress(start, due) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const s = new Date(start), d = new Date(due);
+  if (!start || !due) return 0;
+  if (today <= s) return 0;
+  if (today >= d) return 100;
+  return Math.round((today - s) / (d - s) * 100);
+}
+
+function diffHTML(plan, actual) {
+  const d = actual - plan;
+  const sign = d >= 0 ? '+' : '';
+  const cls = d > plan * 0.2 ? 'diff-over' : d > 0 ? 'diff-warn' : 'diff-ok';
+  return `<span class="diff-cell ${cls}">${sign}${d}</span>`;
+}
+
+function progressBars2(planPct, actualPct) {
+  const cls = actualPct > 100 ? 'bar-actual-over' : actualPct > planPct + 10 ? 'bar-actual-warn' : 'bar-actual';
+  return `<div class="progress-wrap">
+    <div class="progress-row">
+      <span class="progress-label">予</span>
+      <div class="progress-bar-bg"><div class="progress-bar-fill bar-plan" style="width:${Math.min(planPct,100)}%"></div></div>
+      <span class="progress-pct">${planPct}%</span>
+    </div>
+    <div class="progress-row">
+      <span class="progress-label">実</span>
+      <div class="progress-bar-bg"><div class="progress-bar-fill ${cls}" style="width:${Math.min(actualPct,100)}%"></div></div>
+      <span class="progress-pct">${actualPct}%</span>
+    </div>
+  </div>`;
+}
+
+function progressBar1(pct) {
+  const cls = pct > 100 ? 'bar-actual-over' : 'bar-actual';
+  return `<div class="progress-wrap">
+    <div class="progress-row">
+      <div class="progress-bar-bg"><div class="progress-bar-fill ${cls}" style="width:${Math.min(pct,100)}%"></div></div>
+      <span class="progress-pct">${pct}%</span>
+    </div>
+  </div>`;
+}
+
+function statusBadge(statusId, statusName) {
+  const cls = statusId <= 4 ? `s-${statusId}` : 's-default';
+  return `<span class="status-badge ${cls}">${statusName}</span>`;
+}
+
+function avatarHTML(name) {
+  const initial = name ? name[0] : '?';
+  return `<span class="avatar">${initial}</span>${name || '未割当'}`;
+}
+
+function dateRange(start, due) {
+  if (!start && !due) return '<span style="color:var(--text3)">—</span>';
+  return `<span class="date-range">${start || '?'}<span class="sep">→</span>${due || '?'}</span>`;
+}
+
+function renderTable() {
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+
+  const rows = allData.filter(row => {
+    if (filter.health !== 'all' && row.health !== filter.health) return false;
+    if (filter.status === 'done'  && !isParentDone(row)) return false;
+    if (filter.status === 'wip'   && isParentDone(row))  return false;
+    if (filter.assignee !== 'all' && row.assignee !== filter.assignee) return false;
+    
+    // カスタムステータスのフィルタリング
+    if (filter.customStatus !== 'all') {
+      if (!row.customStatus) return false;
+      const match = row.customStatus.match(/^(\d+)/);
+      if (!match) return false;
+      const num = parseInt(match[1], 10);
+      
+      if (filter.customStatus === '見積') {
+        if (num < 0 || num > 19) return false;
+      } else if (filter.customStatus === '設計') {
+        if (num < 20 || num > 29) return false;
+      } else if (filter.customStatus === '正式') {
+        if (num < 30 || num > 39) return false;
+      } else if (filter.customStatus === '開発') {
+        if (num < 40 || num > 49) return false;
+      } else if (filter.customStatus === 'テスト') {
+        if (num < 59 || num > 60) return false;
+      } else if (filter.customStatus === '本番') {
+        if (num !== 69) return false;
+      }
+    }
+    return true;
+  });
+
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="10" style="padding:48px;text-align:center;color:var(--text3)">該当する案件がありません</td></tr>`;
+    return;
+  }
+
+  rows.forEach(row => {
+    const pp  = planProgress(row.start, row.due);
+    const ap  = row.plannedH > 0 ? Math.round(row.actualH / row.plannedH * 100) : 0;
+    const health = row.health === 'green' ? '🟢' : row.health === 'yellow' ? '🟡' : '🔴';
+
+    // 親行
+    const tr = document.createElement('tr');
+    tr.className = 'row-parent';
+    tr.dataset.id = row.id;
+    tr.innerHTML = `
+      <td><button class="toggle-btn" onclick="toggle('${row.id}',this)">▶</button></td>
+      <td>
+        <a href="${row.url}" target="_blank" class="issue-key">${row.id}</a>
+        <span class="issue-title">${escHtml(row.title)}</span>
+        <span class="count-badge">${row.children.length}</span>
+      </td>
+      <td>${avatarHTML(row.assignee)}</td>
+      <td>${dateRange(row.start, row.due)}</td>
+      <td style="text-align:right"><span class="hours-cell hours-plan">${row.plannedH}h</span></td>
+      <td style="text-align:right"><span class="hours-cell hours-actual">${row.actualH}h</span></td>
+      <td style="text-align:right">${diffHTML(row.plannedH, row.actualH)}</td>
+      <td>${progressBars2(pp, ap)}</td>
+      <td>${statusBadge(row.statusId, row.status)}</td>
+      <td>${row.customStatus ? `<span class="status-badge s-default">${escHtml(row.customStatus)}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
+      <td class="health">${health}</td>
+    `;
+    tbody.appendChild(tr);
+
+    // 子課題のソート
+    const sortedChildren = [...row.children].sort((a, b) => {
+      if (filter.childSort === 'assignee-date') {
+        const nameA = a.assignee || '未割当';
+        const nameB = b.assignee || '未割当';
+        if (nameA !== nameB) {
+          return nameA.localeCompare(nameB, 'ja');
+        }
+        const startA = a.start || '9999-12-31';
+        const startB = b.start || '9999-12-31';
+        return startA.localeCompare(startB);
+      } else {
+        const startA = a.start || '9999-12-31';
+        const startB = b.start || '9999-12-31';
+        if (startA !== startB) {
+          return startA.localeCompare(startB);
+        }
+        const nameA = a.assignee || '未割当';
+        const nameB = b.assignee || '未割当';
+        return nameA.localeCompare(nameB, 'ja');
+      }
+    });
+
+    // 子行
+    sortedChildren.forEach((c, idx) => {
+      const cpct = c.progress !== null ? c.progress : (c.plannedH > 0 ? Math.round(c.actualH / c.plannedH * 100) : 0);
+      const cr = document.createElement('tr');
+      cr.className = 'row-child' + (idx === row.children.length - 1 ? ' last-child' : '');
+      cr.dataset.parent = row.id;
+      cr.style.display = 'none';
+      cr.innerHTML = `
+        <td></td>
+        <td>
+          <a href="${c.url}" target="_blank" class="issue-key">${c.id}</a>
+          <span class="issue-title-child">${escHtml(c.title)}</span>
+        </td>
+        <td>${avatarHTML(c.assignee)}</td>
+        <td>${dateRange(c.start, c.due)}</td>
+        <td style="text-align:right"><span class="hours-cell hours-plan">${c.plannedH}h</span></td>
+        <td style="text-align:right"><span class="hours-cell hours-actual">${c.actualH}h</span></td>
+        <td style="text-align:right">${diffHTML(c.plannedH, c.actualH)}</td>
+        <td>${progressBar1(cpct)}</td>
+        <td>${statusBadge(c.statusId, c.status)}</td>
+        <td><span style="color:var(--text3)">—</span></td>
+        <td></td>
+      `;
+      tbody.appendChild(cr);
+    });
+  });
+}
+
+function toggle(id, btn) {
+  const isOpen = btn.classList.toggle('open');
+  document.querySelector(`[data-id="${id}"]`).classList.toggle('expanded', isOpen);
+  document.querySelectorAll(`[data-parent="${id}"]`).forEach(r => r.style.display = isOpen ? '' : 'none');
+}
+
+// ── フィルター ────────────────────────────────────
+function setFilter(key, val, btn) {
+  filter[key] = val;
+  btn.closest('.filter-bar').querySelectorAll('.chip').forEach(c => {
+    if (['すべて','🟢 正常','🟡 注意','🔴 危険'].some(t => c.textContent.trim() === t)) c.classList.remove('active');
+  });
+  btn.classList.add('active');
+  renderTable();
+}
+function toggleStatusFilter(val, btn) {
+  if (btn.classList.contains('active')) {
+    btn.classList.remove('active');
+    filter.status = null;
+  } else {
+    document.querySelectorAll('#filterWip,#filterDone').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    filter.status = val;
+  }
+  renderTable();
+}
+
+// ── ユーティリティ ────────────────────────────────
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function updateAssigneeFilter() {
+  const select = document.getElementById('assigneeFilter');
+  if (!select) return;
+  const currentVal = filter.assignee;
+  
+  // 親課題の担当者を抽出してソート
+  const assignees = [...new Set(allData.map(r => r.assignee).filter(Boolean))].sort();
+  
+  let html = '<option value="all">すべて</option>';
+  assignees.forEach(a => {
+    html += `<option value="${a}">${a}</option>`;
+  });
+  select.innerHTML = html;
+  
+  if (assignees.includes(currentVal)) {
+    select.value = currentVal;
+  } else {
+    filter.assignee = 'all';
+    select.value = 'all';
+  }
+}
+
+function setAssigneeFilter(val) {
+  filter.assignee = val;
+  renderTable();
+}
+
+function setCustomStatusFilter(val, btn) {
+  filter.customStatus = val;
+  btn.closest('.filter-bar').querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  btn.classList.add('active');
+  renderTable();
+}
+
+function setChildSortFilter(val) {
+  filter.childSort = val;
+  renderTable();
+}
+
+// ── 起動 ─────────────────────────────────────────
+fetchData();
+</script>
+</body>
+</html>
