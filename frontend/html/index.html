@@ -250,7 +250,7 @@
         <th style="text-align:right">差分(h)</th>
         <th style="min-width:140px">進捗（予定/実績）</th>
         <th>状態</th>
-        <th>ステータス</th>
+        <th>ステータス / チェック状態</th>
         <th>健全性</th>
       </tr>
     </thead>
@@ -513,7 +513,7 @@ function renderTable() {
         <td style="text-align:right">${diffHTML(c.plannedH, c.actualH)}</td>
         <td>${progressBar1(cpct)}</td>
         <td>${statusBadge(c.statusId, c.status)}</td>
-        <td><span style="color:var(--text3)">—</span></td>
+        <td>${c.checkStatus ? `<span class="status-badge s-default">${escHtml(c.checkStatus)}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
         <td></td>
       `;
       tbody.appendChild(cr);

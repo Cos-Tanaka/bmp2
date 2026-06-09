@@ -96,7 +96,7 @@ def extract_custom_value(issue: dict, field_id: int):
 
 
 # ── データ整形 ─────────────────────────────────────
-def calc_health(issue: dict, children: list) -> str:
+def calc_health(issue: dict, planned: float, actual: float) -> str:
     """
     健全性ロジック:
       🔴 危険  : 期限超過 OR 実績工数 > 予定工数 × 1.2
@@ -105,9 +105,6 @@ def calc_health(issue: dict, children: list) -> str:
     """
     import datetime
     today = datetime.date.today()
-
-    planned = sum(c.get("estimatedHours") or 0 for c in children)
-    actual  = sum(c.get("actualHours")    or 0 for c in children)
 
     due_str = issue.get("dueDate")
     due = None
@@ -125,7 +122,7 @@ def calc_health(issue: dict, children: list) -> str:
     return "green"
 
 
-def format_issue(issue: dict, progress_field_id: int | None) -> dict:
+def format_issue(issue: dict, progress_field_id: int | None, check_status_field_id: int | None) -> dict:
     """子課題 1 件をフロントエンド向けに整形"""
     progress = None
     if progress_field_id:
@@ -149,6 +146,18 @@ def format_issue(issue: dict, progress_field_id: int | None) -> dict:
                         progress = int(float(match.group(1)))
                     except ValueError:
                         pass
+
+    check_status = None
+    if check_status_field_id:
+        val = extract_custom_value(issue, check_status_field_id)
+        if val is not None:
+            if isinstance(val, dict):
+                check_status = val.get("name")
+            elif isinstance(val, list) and val:
+                check_status = val[0].get("name") if isinstance(val[0], dict) else val[0]
+            else:
+                check_status = str(val)
+
     return {
         "id":          issue["issueKey"],
         "title":       issue["summary"],
@@ -160,20 +169,17 @@ def format_issue(issue: dict, progress_field_id: int | None) -> dict:
         "progress":    progress,
         "status":      issue["status"]["name"],
         "statusId":    issue["status"]["id"],
+        "checkStatus": check_status,
+        "issueType":   issue.get("issueType", {}).get("name", ""),
         "url":         f"https://{SPACE}/view/{issue['issueKey']}",
     }
 
 
-def build_response(parents: list, children_map: dict, progress_field_id: int | None, status_field_id: int | None) -> list:
+def build_response(parents: list, children_map: dict, progress_field_id: int | None, status_field_id: int | None, check_status_field_id: int | None) -> list:
     result = []
     for p in parents:
         kids_raw = children_map.get(p["id"], [])
-        kids = [format_issue(c, progress_field_id) for c in kids_raw]
-        health = calc_health(p, kids_raw)
-
-        # 親サマリー
-        planned_total = sum(k["plannedH"] for k in kids)
-        actual_total  = sum(k["actualH"]  for k in kids)
+        kids = [format_issue(c, progress_field_id, check_status_field_id) for c in kids_raw]
 
         custom_status = None
         if status_field_id:
@@ -185,6 +191,35 @@ def build_response(parents: list, children_map: dict, progress_field_id: int | N
                     custom_status = val[0].get("name") if isinstance(val[0], dict) else val[0]
                 else:
                     custom_status = str(val)
+
+        # 親の種別が「00.案件」かつカスタムステータスが「開発中」かどうか判定
+        is_parent_dev = False
+        if p.get("issueType", {}).get("name") == "00.案件" and custom_status:
+            import re
+            match = re.match(r'^(\d+)', custom_status)
+            if match:
+                num = int(match.group(1))
+                if 40 <= num <= 49:
+                    is_parent_dev = True
+            if not is_parent_dev and "開発" in custom_status:
+                is_parent_dev = True
+
+        if is_parent_dev:
+            # 子課題の種別が 01～06 または 20 で始まるもののみを集計対象にする
+            target_prefixes = ("01", "02", "03", "04", "05", "06", "20")
+            planned_total = 0
+            actual_total = 0
+            for k in kids:
+                t_name = k.get("issueType", "")
+                if t_name[:2] in target_prefixes:
+                    planned_total += k["plannedH"]
+                    actual_total += k["actualH"]
+        else:
+            # 通常はすべての子課題を合計
+            planned_total = sum(k["plannedH"] for k in kids)
+            actual_total  = sum(k["actualH"]  for k in kids)
+
+        health = calc_health(p, planned_total, actual_total)
 
         result.append({
             "id":          p["issueKey"],
@@ -233,6 +268,9 @@ def _get_issues_cached():
     # ステータスフィールド名は「ステータス」と仮定
     status_field_name   = os.environ.get("STATUS_FIELD_NAME", "ステータス")
     status_field_id     = custom_fields.get(status_field_name)
+    # チェック状態フィールド名
+    check_status_field_name = os.environ.get("CHECK_STATUS_FIELD_NAME", "チェック状態")
+    check_status_field_id   = custom_fields.get(check_status_field_name)
 
     all_issues = fetch_issues_all()
 
@@ -246,7 +284,7 @@ def _get_issues_cached():
         pid = c["parentIssueId"]
         children_map.setdefault(pid, []).append(c)
 
-    return build_response(parents, children_map, progress_field_id, status_field_id)
+    return build_response(parents, children_map, progress_field_id, status_field_id, check_status_field_id)
 
 
 @app.route("/api/health")
