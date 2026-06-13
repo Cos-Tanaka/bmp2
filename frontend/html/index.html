@@ -371,20 +371,27 @@ function diffHTML(plan, actual) {
   return `<span class="diff-cell ${cls}">${sign}${d}</span>`;
 }
 
+const HOURS_PER_MM = 160;
+
+function remainingColor(remaining, plannedH, actualH) {
+  const diff = actualH - plannedH;
+  if (diff > 0) return 'diff-over';
+  if (diff < 0 && Math.abs(diff) < remaining) return 'diff-warn';
+  if (diff < 0 && Math.abs(diff) > remaining) return 'val-blue';
+  return 'diff-ok';
+}
+
 function remainingHTML(remaining, plannedH, actualH) {
   if (remaining == null) return '<span style="color:var(--text3)">—</span>';
-  const diff = actualH - plannedH;
-  let cls;
-  if (diff > 0) {
-    cls = 'diff-over';
-  } else if (diff < 0 && Math.abs(diff) < remaining) {
-    cls = 'diff-warn';
-  } else if (diff < 0 && Math.abs(diff) > remaining) {
-    cls = 'val-blue';
-  } else {
-    cls = 'diff-ok';
-  }
+  const cls = remainingColor(remaining, plannedH, actualH);
   return `<span class="diff-cell ${cls}">${remaining}h</span>`;
+}
+
+function remainingMMHTML(remaining, plannedH, actualH) {
+  if (remaining == null) return '<span style="color:var(--text3)">—</span>';
+  const cls = remainingColor(remaining, plannedH, actualH);
+  const mm = Math.round(remaining / HOURS_PER_MM / 0.25) * 0.25;
+  return `<span class="diff-cell ${cls}">${mm}人月</span>`;
 }
 
 function progressBars2(planPct, actualPct) {
@@ -488,7 +495,7 @@ function renderTable() {
       <td style="text-align:right"><span class="hours-cell hours-plan">${row.plannedH}h</span></td>
       <td style="text-align:right"><span class="hours-cell hours-actual">${row.actualH}h</span></td>
       <td style="text-align:right">${diffHTML(row.plannedH, row.actualH)}</td>
-      <td style="text-align:right">${remainingHTML(row.remainingH, row.plannedH, row.actualH)}</td>
+      <td style="text-align:right">${remainingMMHTML(row.remainingH, row.plannedH, row.actualH)}</td>
       <td>${progressBars2(pp, ap)}</td>
       <td>${statusBadge(row.statusId, row.status)}</td>
       <td>${row.customStatus ? `<span class="status-badge s-default">${escHtml(row.customStatus)}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
