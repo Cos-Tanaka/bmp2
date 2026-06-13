@@ -371,10 +371,20 @@ function diffHTML(plan, actual) {
   return `<span class="diff-cell ${cls}">${sign}${d}</span>`;
 }
 
-function remainingHTML(remaining) {
+function remainingHTML(remaining, plannedH, actualH) {
   if (remaining == null) return '<span style="color:var(--text3)">—</span>';
-  const cls = remaining === 0 ? 'diff-ok' : 'hours-cell';
-  return `<span class="${cls}">${remaining}h</span>`;
+  const diff = actualH - plannedH;
+  let cls;
+  if (diff > 0) {
+    cls = 'diff-over';
+  } else if (diff < 0 && Math.abs(diff) < remaining) {
+    cls = 'val-blue';
+  } else if (diff < 0 && Math.abs(diff) > remaining) {
+    cls = 'diff-warn';
+  } else {
+    cls = 'diff-ok';
+  }
+  return `<span class="diff-cell ${cls}">${remaining}h</span>`;
 }
 
 function progressBars2(planPct, actualPct) {
@@ -478,7 +488,7 @@ function renderTable() {
       <td style="text-align:right"><span class="hours-cell hours-plan">${row.plannedH}h</span></td>
       <td style="text-align:right"><span class="hours-cell hours-actual">${row.actualH}h</span></td>
       <td style="text-align:right">${diffHTML(row.plannedH, row.actualH)}</td>
-      <td style="text-align:right">${remainingHTML(row.remainingH)}</td>
+      <td style="text-align:right">${remainingHTML(row.remainingH, row.plannedH, row.actualH)}</td>
       <td>${progressBars2(pp, ap)}</td>
       <td>${statusBadge(row.statusId, row.status)}</td>
       <td>${row.customStatus ? `<span class="status-badge s-default">${escHtml(row.customStatus)}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
@@ -527,7 +537,7 @@ function renderTable() {
         <td style="text-align:right"><span class="hours-cell hours-plan">${c.plannedH}h</span></td>
         <td style="text-align:right"><span class="hours-cell hours-actual">${c.actualH}h</span></td>
         <td style="text-align:right">${diffHTML(c.plannedH, c.actualH)}</td>
-        <td style="text-align:right">${remainingHTML(c.remainingH)}</td>
+        <td style="text-align:right">${remainingHTML(c.remainingH, c.plannedH, c.actualH)}</td>
         <td>${progressBar1(cpct)}</td>
         <td>${statusBadge(c.statusId, c.status)}</td>
         <td>${c.checkStatus ? `<span class="status-badge s-default">${escHtml(c.checkStatus)}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
