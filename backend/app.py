@@ -204,27 +204,40 @@ def build_response(parents: list, children_map: dict, progress_field_id: int | N
                 else:
                     custom_status = str(val)
 
-        # 親の種別が「00.案件」かつカスタムステータスが「開発中」かどうか判定
-        is_parent_dev = False
+        # 親の種別が「00.案件」かつカスタムステータスに応じて集計対象の子課題種別を判定
+        import re
+        status_num = None
         if p.get("issueType", {}).get("name") == "00.案件" and custom_status:
-            import re
             match = re.match(r'^(\d+)', custom_status)
             if match:
-                num = int(match.group(1))
-                if 40 <= num <= 49:
-                    is_parent_dev = True
-            if not is_parent_dev and "開発" in custom_status:
-                is_parent_dev = True
+                status_num = int(match.group(1))
+
+        is_parent_dev    = status_num is not None and 40 <= status_num <= 49
+        is_parent_design = status_num is not None and 20 <= status_num <= 29
+
+        # 開発中 fallback: 番号がなくても文字列に「開発」を含む場合
+        if not is_parent_dev and custom_status and "開発" in custom_status:
+            is_parent_dev = True
 
         if is_parent_dev:
-            # 子課題の種別が 01～06 または 20 で始まるもののみを集計対象にする
+            # 子課題の種別が 01〜07 で始まるもののみを集計
             target_prefixes = ("01", "02", "03", "04", "05", "06", "07")
             planned_total   = 0
             actual_total    = 0
             remaining_total = 0
             for k in kids:
-                t_name = k.get("issueType", "")
-                if t_name[:2] in target_prefixes:
+                if k.get("issueType", "")[:2] in target_prefixes:
+                    planned_total   += k["plannedH"]
+                    actual_total    += k["actualH"]
+                    remaining_total += k["remainingH"]
+        elif is_parent_design:
+            # 子課題の種別が 32 で始まるもののみを集計
+            target_prefixes = ("32",)
+            planned_total   = 0
+            actual_total    = 0
+            remaining_total = 0
+            for k in kids:
+                if k.get("issueType", "")[:2] in target_prefixes:
                     planned_total   += k["plannedH"]
                     actual_total    += k["actualH"]
                     remaining_total += k["remainingH"]
