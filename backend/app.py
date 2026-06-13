@@ -158,14 +158,26 @@ def format_issue(issue: dict, progress_field_id: int | None, check_status_field_
             else:
                 check_status = str(val)
 
+    planned_h = issue.get("estimatedHours") or 0
+    actual_h  = issue.get("actualHours")    or 0
+
+    if progress is not None:
+        progress_pct = min(progress, 100)
+    elif planned_h > 0:
+        progress_pct = min(round(actual_h / planned_h * 100), 100)
+    else:
+        progress_pct = 0
+    remaining_h = round(planned_h * (100 - progress_pct) / 100, 1)
+
     return {
         "id":          issue["issueKey"],
         "title":       issue["summary"],
         "assignee":    (issue.get("assignee") or {}).get("name", "未割当"),
         "start":       (issue.get("startDate") or "")[:10],
         "due":         (issue.get("dueDate")   or "")[:10],
-        "plannedH":    issue.get("estimatedHours") or 0,
-        "actualH":     issue.get("actualHours")    or 0,
+        "plannedH":    planned_h,
+        "actualH":     actual_h,
+        "remainingH":  remaining_h,
         "progress":    progress,
         "status":      issue["status"]["name"],
         "statusId":    issue["status"]["id"],
@@ -207,34 +219,38 @@ def build_response(parents: list, children_map: dict, progress_field_id: int | N
         if is_parent_dev:
             # 子課題の種別が 01～06 または 20 で始まるもののみを集計対象にする
             target_prefixes = ("01", "02", "03", "04", "05", "06", "20")
-            planned_total = 0
-            actual_total = 0
+            planned_total   = 0
+            actual_total    = 0
+            remaining_total = 0
             for k in kids:
                 t_name = k.get("issueType", "")
                 if t_name[:2] in target_prefixes:
-                    planned_total += k["plannedH"]
-                    actual_total += k["actualH"]
+                    planned_total   += k["plannedH"]
+                    actual_total    += k["actualH"]
+                    remaining_total += k["remainingH"]
         else:
             # 通常はすべての子課題を合計
-            planned_total = sum(k["plannedH"] for k in kids)
-            actual_total  = sum(k["actualH"]  for k in kids)
+            planned_total   = sum(k["plannedH"]   for k in kids)
+            actual_total    = sum(k["actualH"]    for k in kids)
+            remaining_total = sum(k["remainingH"] for k in kids)
 
         health = calc_health(p, planned_total, actual_total)
 
         result.append({
-            "id":          p["issueKey"],
-            "title":       p["summary"],
-            "assignee":    (p.get("assignee") or {}).get("name", "未割当"),
-            "start":       (p.get("startDate") or "")[:10],
-            "due":         (p.get("dueDate")   or "")[:10],
-            "plannedH":    planned_total,
-            "actualH":     actual_total,
-            "health":      health,
-            "status":      p["status"]["name"],
-            "statusId":    p["status"]["id"],
+            "id":           p["issueKey"],
+            "title":        p["summary"],
+            "assignee":     (p.get("assignee") or {}).get("name", "未割当"),
+            "start":        (p.get("startDate") or "")[:10],
+            "due":          (p.get("dueDate")   or "")[:10],
+            "plannedH":     planned_total,
+            "actualH":      actual_total,
+            "remainingH":   round(remaining_total, 1),
+            "health":       health,
+            "status":       p["status"]["name"],
+            "statusId":     p["status"]["id"],
             "customStatus": custom_status,
-            "url":         f"https://{SPACE}/view/{p['issueKey']}",
-            "children":    kids,
+            "url":          f"https://{SPACE}/view/{p['issueKey']}",
+            "children":     kids,
         })
     return result
 
