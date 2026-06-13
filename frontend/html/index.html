@@ -15,6 +15,13 @@
     --font: 'Noto Sans JP', sans-serif;
     --mono: 'JetBrains Mono', monospace;
   }
+  [data-theme="light"] {
+    --bg: #ffffff; --bg2: #f6f8fa; --bg3: #eaeef2; --bg4: #f1f3f5;
+    --border: #d0d7de; --border2: #afb8c1;
+    --text: #1f2328; --text2: #57606a; --text3: #8c959f;
+    --accent: #0969da; --accent2: #0550ae;
+    --green: #1a7f37; --yellow: #9a6700; --red: #cf222e; --purple: #8250df;
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; min-height: 100vh; }
 
@@ -39,12 +46,12 @@
   .sync-dot.error { background: var(--red); box-shadow: 0 0 6px var(--red); }
   .sync-dot.loading { background: var(--yellow); animation: blink 1s infinite; }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
-  .btn-refresh {
+  .btn-refresh, .btn-theme {
     background: var(--bg4); border: 1px solid var(--border2); border-radius: 6px;
     color: var(--text2); padding: 4px 12px; font-size: 12px; cursor: pointer;
     font-family: var(--font); transition: .15s;
   }
-  .btn-refresh:hover { border-color: var(--accent); color: var(--text); }
+  .btn-refresh:hover, .btn-theme:hover { border-color: var(--accent); color: var(--text); }
 
   /* Summary */
   .summary-bar { padding: 16px 24px; display: flex; gap: 12px; border-bottom: 1px solid var(--border); }
@@ -172,6 +179,7 @@
   </div>
   <div class="header-right">
     <span class="sync-info"><span class="sync-dot loading" id="syncDot"></span><span id="syncText">取得中...</span></span>
+    <button class="btn-theme" id="btnTheme" onclick="toggleTheme()">☀ ライト</button>
     <button class="btn-refresh" onclick="fetchData(true)">↻ 更新</button>
   </div>
 </header>
@@ -592,7 +600,27 @@ function setChildSortFilter(val) {
   renderTable();
 }
 
+// ── テーマ切替 ────────────────────────────────────
+function toggleTheme() {
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  const next = isLight ? 'dark' : 'light';
+  applyTheme(next);
+  localStorage.setItem('bpm2-theme', next);
+}
+
+function applyTheme(theme) {
+  const btn = document.getElementById('btnTheme');
+  if (theme === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+    btn.textContent = '🌙 ダーク';
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+    btn.textContent = '☀ ライト';
+  }
+}
+
 // ── 起動 ─────────────────────────────────────────
+applyTheme(localStorage.getItem('bpm2-theme') || 'dark');
 fetchData();
 </script>
 </body>
