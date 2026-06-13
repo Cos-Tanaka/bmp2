@@ -218,7 +218,7 @@ def build_response(parents: list, children_map: dict, progress_field_id: int | N
 
         if is_parent_dev:
             # 子課題の種別が 01～06 または 20 で始まるもののみを集計対象にする
-            target_prefixes = ("01", "02", "03", "04", "05", "06", "20")
+            target_prefixes = ("01", "02", "03", "04", "05", "06", "07")
             planned_total   = 0
             actual_total    = 0
             remaining_total = 0
