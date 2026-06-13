@@ -378,9 +378,9 @@ function remainingHTML(remaining, plannedH, actualH) {
   if (diff > 0) {
     cls = 'diff-over';
   } else if (diff < 0 && Math.abs(diff) < remaining) {
-    cls = 'val-blue';
-  } else if (diff < 0 && Math.abs(diff) > remaining) {
     cls = 'diff-warn';
+  } else if (diff < 0 && Math.abs(diff) > remaining) {
+    cls = 'val-blue';
   } else {
     cls = 'diff-ok';
   }
