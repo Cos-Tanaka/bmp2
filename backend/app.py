@@ -3,15 +3,27 @@ BPM バックエンド API
 Backlog API からデータを取得し、フロントエンド向けに整形して返す。
 """
 import os
+import re
 import time
+import sqlite3
 import logging
+import datetime
 from functools import wraps
-from flask import Flask, jsonify, abort
+from flask import Flask, jsonify, abort, request
 import requests
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
+
+# ── タイムゾーン ───────────────────────────────────
+JST = datetime.timezone(datetime.timedelta(hours=9))
+
+
+def now_jst_iso() -> str:
+    """JST の壁時計時刻を naive ISO 文字列で返す（SQLite date() 集計と整合）。"""
+    return datetime.datetime.now(JST).replace(tzinfo=None).isoformat(timespec="seconds")
+
 
 # ── 設定 ──────────────────────────────────────────
 SPACE      = os.environ["BACKLOG_SPACE"]          # 例: yourspace.backlog.com
@@ -19,9 +31,58 @@ API_KEY    = os.environ["BACKLOG_API_KEY"]
 PROJECT    = os.environ["BACKLOG_PROJECT_KEY"]
 CACHE_TTL  = int(os.environ.get("CACHE_TTL", 60))
 BASE_URL   = f"https://{SPACE}/api/v2"
+DB_PATH    = os.environ.get("DB_PATH", "/app/data/worklog.db")
 
 # ── シンプルインメモリキャッシュ ────────────────────
 _cache: dict = {}
+
+# ── SQLite（実績工数の日々入力履歴）──────────────────
+def get_db() -> sqlite3.Connection:
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db() -> None:
+    with get_db() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS worklog (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                parent_key   TEXT NOT NULL,
+                parent_title TEXT NOT NULL,
+                child_key    TEXT NOT NULL,
+                name         TEXT NOT NULL,
+                added_at     TEXT NOT NULL,
+                hours        REAL NOT NULL
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_worklog_child ON worklog(child_key)")
+
+
+def add_worklog(parent_key, parent_title, child_key, name, hours) -> dict:
+    added_at = now_jst_iso()
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO worklog (parent_key, parent_title, child_key, name, added_at, hours)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (parent_key, parent_title, child_key, name, added_at, hours),
+        )
+        return {"id": cur.lastrowid, "name": name, "added_at": added_at, "hours": hours}
+
+
+def get_worklog(child_key: str) -> list:
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT name, added_at, hours FROM worklog WHERE child_key = ? ORDER BY added_at DESC, id DESC",
+            (child_key,),
+        ).fetchall()
+    return [{"name": r["name"], "added_at": r["added_at"], "hours": r["hours"]} for r in rows]
+
+
+init_db()
 
 def cached(key: str, ttl: int):
     """関数の戻り値を ttl 秒キャッシュするデコレータ"""
@@ -45,6 +106,14 @@ def backlog_get(path: str, params: dict = None) -> list | dict:
     p["apiKey"] = API_KEY
     url = f"{BASE_URL}{path}"
     resp = requests.get(url, params=p, timeout=15)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def backlog_patch(path: str, data: dict) -> dict:
+    """Backlog REST API を PATCH 呼び出し（フォームエンコード）"""
+    url = f"{BASE_URL}{path}"
+    resp = requests.patch(url, params={"apiKey": API_KEY}, data=data, timeout=15)
     resp.raise_for_status()
     return resp.json()
 
@@ -87,6 +156,30 @@ def get_custom_fields() -> dict:
     return {f["name"]: f["id"] for f in fields}
 
 
+@cached("field_options", ttl=3600)
+def get_field_options() -> dict:
+    """
+    編集対象（進捗率・チェック状態）の単一選択リストの選択肢を返す。
+    { "progress": {"fieldId": int, "items": [{"id", "name"}, ...]},
+      "checkStatus": {...} }
+    """
+    progress_name     = os.environ.get("PROGRESS_FIELD_NAME", "進捗率")
+    check_status_name = os.environ.get("CHECK_STATUS_FIELD_NAME", "チェック状態")
+    targets = {progress_name: "progress", check_status_name: "checkStatus"}
+
+    fields = backlog_get(f"/projects/{PROJECT}/customFields")
+    result: dict = {}
+    for f in fields:
+        key = targets.get(f["name"])
+        if not key:
+            continue
+        result[key] = {
+            "fieldId": f["id"],
+            "items": [{"id": it["id"], "name": it["name"]} for it in (f.get("items") or [])],
+        }
+    return result
+
+
 def extract_custom_value(issue: dict, field_id: int):
     """課題からカスタム属性値を取り出す"""
     for cf in issue.get("customFields", []):
@@ -103,8 +196,7 @@ def calc_health(issue: dict, planned: float, actual: float) -> str:
       🟡 注意  : 期限まで 3 日以内 OR 実績工数 > 予定工数
       🟢 正常  : 上記以外
     """
-    import datetime
-    today = datetime.date.today()
+    today = datetime.datetime.now(JST).date()
 
     due_str = issue.get("dueDate")
     due = None
@@ -167,7 +259,7 @@ def format_issue(issue: dict, progress_field_id: int | None, check_status_field_
         progress_pct = min(round(actual_h / planned_h * 100), 100)
     else:
         progress_pct = 0
-    remaining_h = round(planned_h * (100 - progress_pct) / 100, 1)
+    remaining_h = round((planned_h / 0.8) * (100 - progress_pct) / 100, 1)
 
     return {
         "id":          issue["issueKey"],
@@ -187,7 +279,10 @@ def format_issue(issue: dict, progress_field_id: int | None, check_status_field_
     }
 
 
-def build_response(parents: list, children_map: dict, progress_field_id: int | None, status_field_id: int | None, check_status_field_id: int | None) -> list:
+KINTONE_BASE_URL = "https://aspit.cybozu.com/k/70/show#record="
+
+
+def build_response(parents: list, children_map: dict, progress_field_id: int | None, status_field_id: int | None, check_status_field_id: int | None, kintone_field_id: int | None) -> list:
     result = []
     for p in parents:
         kids_raw = children_map.get(p["id"], [])
@@ -249,6 +344,15 @@ def build_response(parents: list, children_map: dict, progress_field_id: int | N
 
         health = calc_health(p, planned_total, actual_total)
 
+        # Kintone番号（テキスト）から数値部分のみ抽出してリンクURLを生成
+        kintone_url = None
+        if kintone_field_id:
+            kval = extract_custom_value(p, kintone_field_id)
+            if kval:
+                m = re.search(r"\d+", str(kval))
+                if m:
+                    kintone_url = KINTONE_BASE_URL + m.group(0)
+
         result.append({
             "id":           p["issueKey"],
             "title":        p["summary"],
@@ -263,6 +367,7 @@ def build_response(parents: list, children_map: dict, progress_field_id: int | N
             "statusId":     p["status"]["id"],
             "customStatus": custom_status,
             "url":          f"https://{SPACE}/view/{p['issueKey']}",
+            "kintoneUrl":   kintone_url,
             "children":     kids,
         })
     return result
@@ -300,6 +405,9 @@ def _get_issues_cached():
     # チェック状態フィールド名
     check_status_field_name = os.environ.get("CHECK_STATUS_FIELD_NAME", "チェック状態")
     check_status_field_id   = custom_fields.get(check_status_field_name)
+    # Kintone番号フィールド
+    kintone_field_name      = os.environ.get("KINTONE_FIELD_NAME", "Kintone番号")
+    kintone_field_id        = custom_fields.get(kintone_field_name)
 
     all_issues = fetch_issues_all()
 
@@ -313,7 +421,173 @@ def _get_issues_cached():
         pid = c["parentIssueId"]
         children_map.setdefault(pid, []).append(c)
 
-    return build_response(parents, children_map, progress_field_id, status_field_id, check_status_field_id)
+    return build_response(parents, children_map, progress_field_id, status_field_id, check_status_field_id, kintone_field_id)
+
+
+@app.route("/api/field-options")
+def api_field_options():
+    """進捗率・チェック状態プルダウンの選択肢を返す。"""
+    try:
+        return jsonify(get_field_options())
+    except requests.HTTPError as e:
+        log.error("Backlog API error: %s", e)
+        abort(502, description=f"Backlog API error: {e.response.status_code}")
+    except Exception as e:
+        log.exception("Unexpected error")
+        abort(500, description=str(e))
+
+
+@app.route("/api/issue/<key>", methods=["PATCH"])
+def api_update_issue(key: str):
+    """
+    子課題の進捗率・チェック状態・開始日・期限日を更新する。
+    リクエストボディ(JSON): {
+      "progressItemId": int?, "checkStatusItemId": int?,
+      "startDate": "YYYY-MM-DD"|""?, "dueDate": "YYYY-MM-DD"|""?
+    }
+    単一選択リストは項目ID(customField_<id>)、日付は標準フィールドで更新する。
+    """
+    body = request.get_json(silent=True) or {}
+    options = get_field_options()
+
+    data: dict = {}
+    if body.get("progressItemId") is not None and "progress" in options:
+        data[f"customField_{options['progress']['fieldId']}"] = body["progressItemId"]
+    if body.get("checkStatusItemId") is not None and "checkStatus" in options:
+        data[f"customField_{options['checkStatus']['fieldId']}"] = body["checkStatusItemId"]
+    # 日付（標準フィールド）。空文字はクリア指示として許容
+    if "startDate" in body:
+        data["startDate"] = body["startDate"] or ""
+    if "dueDate" in body:
+        data["dueDate"] = body["dueDate"] or ""
+
+    if not data:
+        abort(400, description="更新対象がありません")
+
+    try:
+        updated = backlog_patch(f"/issues/{key}", data)
+        # ダッシュボード一覧へ即時反映させるためキャッシュ破棄
+        _cache.pop("issues", None)
+        return jsonify({"ok": True, "issueKey": updated.get("issueKey", key)})
+    except requests.HTTPError as e:
+        log.error("Backlog update error: %s", e)
+        abort(502, description=f"Backlog API error: {e.response.status_code}")
+    except Exception as e:
+        log.exception("Unexpected error")
+        abort(500, description=str(e))
+
+
+@app.route("/api/worklog/<key>", methods=["GET"])
+def api_worklog_list(key: str):
+    """子課題の実績工数 入力履歴（名前・追加日時・追加工数）を返す。"""
+    try:
+        return jsonify(get_worklog(key))
+    except Exception as e:
+        log.exception("Unexpected error")
+        abort(500, description=str(e))
+
+
+@app.route("/api/worklog/<key>", methods=["POST"])
+def api_worklog_add(key: str):
+    """
+    子課題の実績工数を日々入力する。
+    body(JSON): { "hours": number, "name": str, "parentKey": str, "parentTitle": str }
+    - バリデーション: hours/name は必須、hours は数値のみ
+    - Backlog の actualHours に加算し、SQLite に履歴を保存する
+    """
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    parent_key   = (body.get("parentKey") or "").strip()
+    parent_title = (body.get("parentTitle") or "").strip()
+
+    # ── バリデーション ──
+    if not name:
+        abort(400, description="名前は必須です")
+    try:
+        hours = float(body.get("hours"))
+    except (TypeError, ValueError):
+        abort(400, description="追加工数(h) は数値で入力してください")
+    if hours <= 0:
+        abort(400, description="追加工数(h) は 0 より大きい数値で入力してください")
+
+    try:
+        # Backlog の現在の実績工数を取得して加算
+        issue = backlog_get(f"/issues/{key}")
+        current = issue.get("actualHours") or 0
+        new_total = round(current + hours, 2)
+        backlog_patch(f"/issues/{key}", {"actualHours": new_total})
+
+        # SQLite に履歴保存
+        entry = add_worklog(parent_key, parent_title, key, name, hours)
+
+        # ダッシュボードへ即時反映
+        _cache.pop("issues", None)
+        return jsonify({"ok": True, "actualHours": new_total, "entry": entry})
+    except requests.HTTPError as e:
+        log.error("Backlog update error: %s", e)
+        abort(502, description=f"Backlog API error: {e.response.status_code}")
+    except Exception as e:
+        log.exception("Unexpected error")
+        abort(500, description=str(e))
+
+
+HOURS_PER_PERSON_DAY = float(os.environ.get("HOURS_PER_PERSON_DAY", 8))
+
+
+@app.route("/api/worklog/names", methods=["GET"])
+def api_worklog_names():
+    """SQLite に登録された名前を重複なく返す（検索条件のリスト用）。"""
+    try:
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT name FROM worklog ORDER BY name"
+            ).fetchall()
+        return jsonify([r["name"] for r in rows])
+    except Exception as e:
+        log.exception("Unexpected error")
+        abort(500, description=str(e))
+
+
+@app.route("/api/worklog/search", methods=["GET"])
+def api_worklog_search():
+    """
+    実施工数の検索。検索条件: name（任意）, date（任意・単一日付 YYYY-MM-DD）。
+    親案件・子案件・追加日ごとに工数を集計し、人日に換算して返す。
+    """
+    name = (request.args.get("name") or "").strip()
+    date = (request.args.get("date") or "").strip()
+    try:
+        with get_db() as conn:
+            rows = conn.execute(
+                """
+                SELECT w1.parent_key,
+                       (SELECT w2.parent_title FROM worklog w2
+                          WHERE w2.parent_key = w1.parent_key
+                          ORDER BY w2.added_at DESC, w2.id DESC LIMIT 1) AS parent_title,
+                       w1.name,
+                       date(w1.added_at) AS day,
+                       SUM(w1.hours) AS total_hours
+                FROM worklog w1
+                WHERE (? = '' OR w1.name = ?)
+                  AND (? = '' OR date(w1.added_at) = ?)
+                GROUP BY w1.parent_key, w1.name, date(w1.added_at)
+                ORDER BY day DESC, w1.parent_key, w1.name
+                """,
+                (name, name, date, date),
+            ).fetchall()
+        result = [{
+            "parentKey":   r["parent_key"],
+            "parentTitle": r["parent_title"],
+            "parentUrl":   f"https://{SPACE}/view/{r['parent_key']}",
+            "name":        r["name"],
+            "day":         r["day"],
+            "personDays":  round(r["total_hours"] / HOURS_PER_PERSON_DAY, 2),
+            "hours":       round(r["total_hours"], 2),
+        } for r in rows]
+        return jsonify(result)
+    except Exception as e:
+        log.exception("Unexpected error")
+        abort(500, description=str(e))
 
 
 @app.route("/api/health")
@@ -321,6 +595,7 @@ def api_health():
     return jsonify({"status": "ok", "project": PROJECT, "space": SPACE})
 
 
+@app.errorhandler(400)
 @app.errorhandler(502)
 @app.errorhandler(500)
 def handle_error(e):

@@ -14,7 +14,9 @@
     --green: #3fb950; --yellow: #d29922; --red: #f85149; --purple: #a371f7;
     --font: 'Noto Sans JP', sans-serif;
     --mono: 'JetBrains Mono', monospace;
+    color-scheme: dark;
   }
+  [data-theme="light"] { color-scheme: light; }
   [data-theme="light"] {
     --bg: #ffffff; --bg2: #f6f8fa; --bg3: #eaeef2; --bg4: #f1f3f5;
     --border: #d0d7de; --border2: #afb8c1;
@@ -112,6 +114,13 @@
   .toggle-btn.open { transform: rotate(90deg); }
 
   .issue-key { font-family: var(--mono); font-size: 11px; color: var(--accent); white-space: nowrap; margin-right: 8px; }
+  .kintone-link {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; border-radius: 3px; vertical-align: middle;
+    background: #00a0e9; color: #fff; font-family: var(--mono); font-size: 10px;
+    font-weight: 700; text-decoration: none; margin-left: 6px; transition: .15s;
+  }
+  .kintone-link:hover { filter: brightness(1.15); }
   .issue-title { color: var(--text); font-weight: 500; }
   .issue-title-child { color: var(--text2); }
 
@@ -168,6 +177,81 @@
     animation: spin .8s linear infinite; margin: 0 auto 12px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* 子課題詳細モーダル */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    display: none; align-items: flex-start; justify-content: center;
+    z-index: 1000; padding: 60px 16px; overflow-y: auto;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--bg2); border: 1px solid var(--border2); border-radius: 10px;
+    width: 100%; max-width: 560px; box-shadow: 0 12px 40px rgba(0,0,0,.4);
+    animation: modalIn .18s ease;
+  }
+  @keyframes modalIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+  .modal-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+    padding: 16px 20px; border-bottom: 1px solid var(--border);
+  }
+  .modal-head .m-key { font-family: var(--mono); font-size: 12px; color: var(--accent); margin-bottom: 4px; display: inline-block; }
+  .modal-head .m-title { font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.4; }
+  .modal-close {
+    background: none; border: none; color: var(--text3); font-size: 20px; cursor: pointer;
+    line-height: 1; padding: 0 4px; flex-shrink: 0; transition: .15s;
+  }
+  .modal-close:hover { color: var(--text); }
+  .modal-body { padding: 16px 20px; }
+  .m-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+  .m-field { display: flex; flex-direction: column; gap: 3px; }
+  .m-field.full { grid-column: 1 / -1; }
+  .m-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; }
+  .m-value { font-size: 13px; color: var(--text); }
+  .m-value.mono { font-family: var(--mono); }
+  .m-select {
+    background: var(--bg4); border: 1px solid var(--border2); border-radius: 6px;
+    color: var(--text); padding: 5px 8px; font-size: 13px; font-family: var(--font);
+    outline: none; cursor: pointer; width: 100%; transition: .15s;
+  }
+  .m-select:hover { border-color: var(--accent); }
+  .m-select:focus { border-color: var(--accent); }
+  .modal-foot {
+    padding: 12px 20px; border-top: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: flex-end; gap: 12px;
+  }
+  .m-msg { margin-right: auto; font-size: 12px; }
+  .m-msg.ok { color: var(--green); } .m-msg.err { color: var(--red); }
+  .m-save {
+    background: var(--green); border: 1px solid var(--green); color: #fff;
+    border-radius: 6px; padding: 6px 16px; font-size: 12px; font-weight: 500;
+    cursor: pointer; font-family: var(--font); transition: .15s;
+  }
+  .m-save:hover { filter: brightness(1.1); }
+  .m-save:disabled { opacity: .5; cursor: default; }
+
+  /* 実績工数入力レイヤー */
+  .hours-actual-edit { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+  .hours-actual-edit:hover { color: var(--accent); }
+  .w-form { display: flex; flex-direction: column; gap: 12px; }
+  .w-form-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 4px; }
+  .w-history { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 14px; }
+  .w-history-title { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
+  .w-hist-row {
+    display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center;
+    padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 12px;
+  }
+  .w-hist-row:last-child { border-bottom: none; }
+  .w-hist-name { color: var(--text); }
+  .w-hist-date { font-family: var(--mono); font-size: 11px; color: var(--text3); white-space: nowrap; }
+  .w-hist-hours { font-family: var(--mono); font-weight: 600; color: var(--green); white-space: nowrap; text-align: right; }
+  .w-hist-empty { font-size: 12px; color: var(--text3); padding: 6px 0; }
+  .m-link {
+    display: inline-block; background: var(--accent2); border: 1px solid var(--accent);
+    color: #fff; border-radius: 6px; padding: 6px 14px; font-size: 12px;
+    text-decoration: none; transition: .15s;
+  }
+  .m-link:hover { background: var(--accent); }
 </style>
 </head>
 <body>
@@ -179,6 +263,8 @@
   </div>
   <div class="header-right">
     <span class="sync-info"><span class="sync-dot loading" id="syncDot"></span><span id="syncText">取得中...</span></span>
+    <a class="btn-refresh" href="/worklog.html" target="_blank" rel="noopener" style="text-decoration:none">📊 実施工数確認</a>
+    <a class="btn-refresh" href="/guide.html" target="_blank" rel="noopener" style="text-decoration:none">❓ 使い方</a>
     <button class="btn-theme" id="btnTheme" onclick="toggleTheme()">☀ ライト</button>
     <button class="btn-refresh" onclick="fetchData(true)">↻ 更新</button>
   </div>
@@ -245,6 +331,58 @@
   <button class="chip" onclick="setCustomStatusFilter('本番',this)">本番リリース済み</button>
 </div>
 
+<div class="modal-overlay" id="childModal" onclick="if(event.target===this)closeChildModal()">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <div>
+        <span class="m-key" id="mKey"></span>
+        <div class="m-title" id="mTitle"></div>
+      </div>
+      <button class="modal-close" onclick="closeChildModal()" aria-label="閉じる">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="m-grid" id="mGrid"></div>
+    </div>
+    <div class="modal-foot">
+      <span class="m-msg" id="mMsg"></span>
+      <button class="m-save" id="mSave" onclick="saveChildEdits()">保存</button>
+      <a class="m-link" id="mLink" href="#" target="_blank">Backlog で開く ↗</a>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="worklogModal" onclick="if(event.target===this)closeWorklogModal()">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <div>
+        <span class="m-key" id="wKey"></span>
+        <div class="m-title" id="wTitle"></div>
+      </div>
+      <button class="modal-close" onclick="closeWorklogModal()" aria-label="閉じる">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="w-form">
+        <div class="m-field">
+          <span class="m-label">追加工数 (h) <span style="color:var(--red)">*</span></span>
+          <input type="number" step="0.25" min="0" class="m-select" id="wHours" placeholder="例: 1.5">
+        </div>
+        <div class="m-field">
+          <span class="m-label">名前 <span style="color:var(--red)">*</span></span>
+          <input type="text" class="m-select" id="wName" placeholder="入力者名">
+        </div>
+        <div class="w-form-foot">
+          <span class="m-msg" id="wMsg"></span>
+          <button class="m-save" id="wAdd" onclick="addWorklog()">追加</button>
+        </div>
+      </div>
+      <div class="w-history">
+        <div class="w-history-title">入力履歴</div>
+        <div id="wHistory"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="table-wrap">
   <table>
     <thead>
@@ -270,8 +408,53 @@
 <script>
 // ── 状態 ──────────────────────────────────────────
 let allData = [];
+let fieldOptions = null;          // 進捗率・チェック状態の選択肢
+let modalChildId = null;          // 現在モーダルで開いている子課題ID
+let modalOriginal = {};           // モーダル表示時の初期選択値（変更検知用）
 let filter = { health: 'all', status: null, assignee: 'all', customStatus: 'all', childSort: 'assignee-date' };
 const POLL_MS = 60000; // 60秒ポーリング
+const FILTER_KEY = 'bpm2-filter';
+
+// ── フィルタの保存・復元 ──────────────────────────
+function saveFilter() {
+  try { localStorage.setItem(FILTER_KEY, JSON.stringify(filter)); } catch (e) {}
+}
+
+function loadFilter() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(FILTER_KEY) || '{}');
+    // 既知のキーだけを取り込む（不正値は無視）
+    for (const k of Object.keys(filter)) {
+      if (saved[k] !== undefined) filter[k] = saved[k];
+    }
+  } catch (e) {}
+}
+
+// 保存されたフィルタを UI コントロール（チップ・セレクト）へ反映
+function applyFilterUI() {
+  document.querySelectorAll('.filter-bar .chip').forEach(c => {
+    const oc = c.getAttribute('onclick') || '';
+    let m;
+    if ((m = oc.match(/setFilter\('health','([^']+)'/))) {
+      c.classList.toggle('active', m[1] === filter.health);
+    } else if ((m = oc.match(/setCustomStatusFilter\('([^']+)'/))) {
+      c.classList.toggle('active', m[1] === filter.customStatus);
+    } else if ((m = oc.match(/toggleStatusFilter\('([^']+)'/))) {
+      c.classList.toggle('active', m[1] === filter.status);
+    }
+  });
+  const sort = document.getElementById('childSortFilter');
+  if (sort) sort.value = filter.childSort;
+  // 担当者セレクトは取得後 updateAssigneeFilter() で選択肢生成・反映される
+}
+
+// ── 編集用フィールド選択肢の取得 ──────────────────
+async function loadFieldOptions() {
+  try {
+    const res = await fetch('/api/field-options');
+    if (res.ok) fieldOptions = await res.json();
+  } catch (e) { /* 選択肢取得失敗時はモーダルで閲覧のみ */ }
+}
 
 // ── API 取得 ──────────────────────────────────────
 async function fetchData(force = false) {
@@ -425,6 +608,12 @@ function statusBadge(statusId, statusName) {
   return `<span class="status-badge ${cls}">${statusName}</span>`;
 }
 
+// Kintone番号があれば kintone レコードへのリンクアイコンを返す（無ければ非表示）
+function kintoneIcon(url) {
+  if (!url) return '';
+  return ` <a href="${url}" target="_blank" class="kintone-link" title="kintone で開く" onclick="event.stopPropagation()">k</a>`;
+}
+
 function avatarHTML(name) {
   const initial = name ? name[0] : '?';
   return `<span class="avatar">${initial}</span>${name || '未割当'}`;
@@ -487,7 +676,7 @@ function renderTable() {
       <td><button class="toggle-btn" onclick="toggle('${row.id}',this)">▶</button></td>
       <td>
         <a href="${row.url}" target="_blank" class="issue-key">${row.id}</a>
-        <span class="issue-title">${escHtml(row.title)}</span>
+        <span class="issue-title">${escHtml(row.title)}</span>${kintoneIcon(row.kintoneUrl)}
         <span class="count-badge">${row.children.length}</span>
       </td>
       <td>${avatarHTML(row.assignee)}</td>
@@ -537,12 +726,12 @@ function renderTable() {
         <td></td>
         <td>
           <a href="${c.url}" target="_blank" class="issue-key">${c.id}</a>
-          <span class="issue-title-child">${escHtml(c.title)}</span>
+          <span class="issue-title-child" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px" onclick="openChildModal('${c.id}')" title="詳細を表示">${escHtml(c.title)}</span>
         </td>
         <td>${avatarHTML(c.assignee)}</td>
         <td>${dateRange(c.start, c.due)}</td>
         <td style="text-align:right"><span class="hours-cell hours-plan">${c.plannedH}h</span></td>
-        <td style="text-align:right"><span class="hours-cell hours-actual">${c.actualH}h</span></td>
+        <td style="text-align:right"><span class="hours-cell hours-actual hours-actual-edit" onclick="openWorklogModal('${c.id}')" title="実績工数を入力">${c.actualH}h</span></td>
         <td style="text-align:right">${diffHTML(c.plannedH, c.actualH)}</td>
         <td style="text-align:right">${remainingHTML(c.remainingH, c.plannedH, c.actualH)}</td>
         <td>${progressBar1(cpct)}</td>
@@ -561,6 +750,266 @@ function toggle(id, btn) {
   document.querySelectorAll(`[data-parent="${id}"]`).forEach(r => r.style.display = isOpen ? '' : 'none');
 }
 
+// ── 子課題詳細モーダル ────────────────────────────
+function findChild(childId) {
+  for (const row of allData) {
+    const c = row.children.find(k => k.id === childId);
+    if (c) return { child: c, parent: row };
+  }
+  return null;
+}
+
+// 選択肢を <option> 文字列に変換。現在値(name一致)を選択状態にする
+function optionsHTML(items, currentName) {
+  return items.map(it =>
+    `<option value="${it.id}"${String(it.name) === String(currentName) ? ' selected' : ''}>${escHtml(it.name)}</option>`
+  ).join('');
+}
+
+function editFieldHTML(label, selectId, items, currentName) {
+  if (!items) {
+    // 選択肢が取れない場合は閲覧表示にフォールバック
+    return `<div class="m-field">
+      <span class="m-label">${label}</span>
+      <span class="m-value">${escHtml(currentName || '—')}</span>
+    </div>`;
+  }
+  return `<div class="m-field">
+    <span class="m-label">${label}</span>
+    <select class="m-select" id="${selectId}">${optionsHTML(items, currentName)}</select>
+  </div>`;
+}
+
+function openChildModal(childId) {
+  const found = findChild(childId);
+  if (!found) return;
+  const { child: c, parent: p } = found;
+  modalChildId = childId;
+
+  document.getElementById('mKey').textContent = c.id;
+  document.getElementById('mTitle').textContent = c.title;
+  document.getElementById('mLink').href = c.url;
+  setModalMsg('', '');
+
+  const progItems  = fieldOptions && fieldOptions.progress    ? fieldOptions.progress.items    : null;
+  const checkItems = fieldOptions && fieldOptions.checkStatus ? fieldOptions.checkStatus.items : null;
+
+  // 閲覧専用フィールド
+  const readonly = [
+    ['親案件', `${escHtml(p.id)} ${escHtml(p.title)}`, true],
+    ['担当者', escHtml(c.assignee || '未割当')],
+    ['予定工数', c.plannedH + ' h', false, true],
+    ['実績工数', c.actualH + ' h', false, true],
+    ['差分', (c.actualH - c.plannedH >= 0 ? '+' : '') + (c.actualH - c.plannedH) + ' h', false, true],
+    ['残工数', (c.remainingH != null ? c.remainingH + ' h' : '—'), false, true],
+    ['状態', escHtml(c.status || '—')],
+  ].map(([label, val, full, mono]) =>
+    `<div class="m-field${full ? ' full' : ''}">
+      <span class="m-label">${label}</span>
+      <span class="m-value${mono ? ' mono' : ''}">${val}</span>
+    </div>`
+  ).join('');
+
+  // 編集可能フィールド（開始日・期限日・進捗率・チェック状態）
+  const editable =
+    `<div class="m-field">
+      <span class="m-label">開始日</span>
+      <input type="date" class="m-select" id="mStart" value="${c.start || ''}">
+    </div>` +
+    `<div class="m-field">
+      <span class="m-label">期限日</span>
+      <input type="date" class="m-select" id="mDue" value="${c.due || ''}">
+    </div>` +
+    editFieldHTML('進捗率', 'mProgress', progItems, c.progress != null ? c.progress : '') +
+    editFieldHTML('チェック状態', 'mCheckStatus', checkItems, c.checkStatus || '');
+
+  document.getElementById('mGrid').innerHTML = readonly + editable;
+
+  // 変更検知用に初期値を保持
+  const progEl  = document.getElementById('mProgress');
+  const checkEl = document.getElementById('mCheckStatus');
+  modalOriginal = {
+    progress:    progEl  ? progEl.value  : null,
+    checkStatus: checkEl ? checkEl.value : null,
+    start:       c.start || '',
+    due:         c.due   || '',
+  };
+
+  document.getElementById('childModal').classList.add('open');
+}
+
+function setModalMsg(text, cls) {
+  const el = document.getElementById('mMsg');
+  el.textContent = text;
+  el.className = 'm-msg' + (cls ? ' ' + cls : '');
+}
+
+async function saveChildEdits() {
+  if (!modalChildId) return;
+  const progEl  = document.getElementById('mProgress');
+  const checkEl = document.getElementById('mCheckStatus');
+  const startEl = document.getElementById('mStart');
+  const dueEl   = document.getElementById('mDue');
+  const payload = {};
+  // 変更があった項目だけを送る（同値だと Backlog が "No comment content" で弾くため）
+  if (progEl  && progEl.value  !== modalOriginal.progress)    payload.progressItemId    = parseInt(progEl.value, 10);
+  if (checkEl && checkEl.value !== modalOriginal.checkStatus) payload.checkStatusItemId = parseInt(checkEl.value, 10);
+  if (startEl && startEl.value !== modalOriginal.start)       payload.startDate = startEl.value;
+  if (dueEl   && dueEl.value   !== modalOriginal.due)         payload.dueDate   = dueEl.value;
+
+  if (Object.keys(payload).length === 0) {
+    setModalMsg('変更がありません', '');
+    return;
+  }
+
+  if (startEl && dueEl && startEl.value && dueEl.value && startEl.value > dueEl.value) {
+    setModalMsg('開始日が期限日より後になっています', 'err');
+    return;
+  }
+
+  const btn = document.getElementById('mSave');
+  btn.disabled = true;
+  setModalMsg('保存中...', '');
+  try {
+    const res = await fetch('/api/issue/' + encodeURIComponent(modalChildId), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try { const j = await res.json(); if (j.error) detail = j.error; } catch (e) {}
+      throw new Error(detail);
+    }
+    setModalMsg('保存しました', 'ok');
+    // 保存後の値を初期値として更新（連続保存での誤再送を防止）
+    if (progEl)  modalOriginal.progress    = progEl.value;
+    if (checkEl) modalOriginal.checkStatus = checkEl.value;
+    if (startEl) modalOriginal.start       = startEl.value;
+    if (dueEl)   modalOriginal.due         = dueEl.value;
+    await fetchData(true);   // 背景テーブルを最新化
+  } catch (e) {
+    setModalMsg('保存失敗: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function closeChildModal() {
+  modalChildId = null;
+  document.getElementById('childModal').classList.remove('open');
+}
+
+// ── 実績工数 日々入力レイヤー ─────────────────────
+let worklogChildId = null;
+const WORKLOG_NAME_KEY = 'bpm2-worklog-name';
+
+async function openWorklogModal(childId) {
+  const found = findChild(childId);
+  if (!found) return;
+  const { child: c } = found;
+  worklogChildId = childId;
+
+  document.getElementById('wKey').textContent = c.id;
+  document.getElementById('wTitle').textContent = c.title;
+  document.getElementById('wHours').value = '';
+  // 名前は前回入力をブラウザから復元
+  document.getElementById('wName').value = localStorage.getItem(WORKLOG_NAME_KEY) || '';
+  setWorklogMsg('', '');
+  document.getElementById('wHistory').innerHTML = '<div class="w-hist-empty">読込中...</div>';
+  document.getElementById('worklogModal').classList.add('open');
+
+  await loadWorklogHistory(childId);
+}
+
+function fmtDateTime(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+async function loadWorklogHistory(childId) {
+  const box = document.getElementById('wHistory');
+  try {
+    const res = await fetch('/api/worklog/' + encodeURIComponent(childId));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const rows = await res.json();
+    if (!rows.length) {
+      box.innerHTML = '<div class="w-hist-empty">履歴はありません</div>';
+      return;
+    }
+    box.innerHTML = rows.map(r =>
+      `<div class="w-hist-row">
+        <span class="w-hist-name">${escHtml(r.name)}</span>
+        <span class="w-hist-date">${fmtDateTime(r.added_at)}</span>
+        <span class="w-hist-hours">+${r.hours}h</span>
+      </div>`
+    ).join('');
+  } catch (e) {
+    box.innerHTML = `<div class="w-hist-empty">履歴の取得に失敗しました (${escHtml(e.message)})</div>`;
+  }
+}
+
+function setWorklogMsg(text, cls) {
+  const el = document.getElementById('wMsg');
+  el.textContent = text;
+  el.className = 'm-msg' + (cls ? ' ' + cls : '');
+}
+
+async function addWorklog() {
+  if (!worklogChildId) return;
+  const found = findChild(worklogChildId);
+  if (!found) return;
+  const { child: c, parent: p } = found;
+
+  const hoursRaw = document.getElementById('wHours').value.trim();
+  const name = document.getElementById('wName').value.trim();
+
+  // 入力された名前はブラウザに保持（次回表示時に復元）
+  if (name) { try { localStorage.setItem(WORKLOG_NAME_KEY, name); } catch (e) {} }
+
+  // バリデーション: 両項目必須・追加工数は数値のみ
+  if (!hoursRaw && !name) { setWorklogMsg('追加工数(h) と 名前 は必須です', 'err'); return; }
+  if (!name) { setWorklogMsg('名前は必須です', 'err'); return; }
+  if (!hoursRaw) { setWorklogMsg('追加工数(h) は必須です', 'err'); return; }
+  const hours = Number(hoursRaw);
+  if (!Number.isFinite(hours)) { setWorklogMsg('追加工数(h) は数値で入力してください', 'err'); return; }
+  if (hours <= 0) { setWorklogMsg('追加工数(h) は 0 より大きい数値で入力してください', 'err'); return; }
+
+  const btn = document.getElementById('wAdd');
+  btn.disabled = true;
+  setWorklogMsg('追加中...', '');
+  try {
+    const res = await fetch('/api/worklog/' + encodeURIComponent(worklogChildId), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hours, name, parentKey: p.id, parentTitle: p.title }),
+    });
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try { const j = await res.json(); if (j.error) detail = j.error; } catch (e) {}
+      throw new Error(detail);
+    }
+    setWorklogMsg('追加しました', 'ok');
+    document.getElementById('wHours').value = '';
+    await loadWorklogHistory(worklogChildId);   // 履歴更新
+    await fetchData(true);                        // 背景テーブルを最新化
+  } catch (e) {
+    setWorklogMsg('追加失敗: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function closeWorklogModal() {
+  worklogChildId = null;
+  document.getElementById('worklogModal').classList.remove('open');
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeChildModal(); closeWorklogModal(); }
+});
+
 // ── フィルター ────────────────────────────────────
 function setFilter(key, val, btn) {
   filter[key] = val;
@@ -568,6 +1017,7 @@ function setFilter(key, val, btn) {
     if (['すべて','🟢 正常','🟡 注意','🔴 危険'].some(t => c.textContent.trim() === t)) c.classList.remove('active');
   });
   btn.classList.add('active');
+  saveFilter();
   renderTable();
 }
 function toggleStatusFilter(val, btn) {
@@ -579,6 +1029,7 @@ function toggleStatusFilter(val, btn) {
     btn.classList.add('active');
     filter.status = val;
   }
+  saveFilter();
   renderTable();
 }
 
@@ -611,6 +1062,7 @@ function updateAssigneeFilter() {
 
 function setAssigneeFilter(val) {
   filter.assignee = val;
+  saveFilter();
   renderTable();
 }
 
@@ -618,11 +1070,13 @@ function setCustomStatusFilter(val, btn) {
   filter.customStatus = val;
   btn.closest('.filter-bar').querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
   btn.classList.add('active');
+  saveFilter();
   renderTable();
 }
 
 function setChildSortFilter(val) {
   filter.childSort = val;
+  saveFilter();
   renderTable();
 }
 
@@ -647,6 +1101,9 @@ function applyTheme(theme) {
 
 // ── 起動 ─────────────────────────────────────────
 applyTheme(localStorage.getItem('bpm2-theme') || 'dark');
+loadFilter();
+applyFilterUI();
+loadFieldOptions();
 fetchData();
 </script>
 </body>
