@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BPM / 実施工数確認</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #1c2128; --bg4: #21262d;
+    --border: #30363d; --border2: #3d444d;
+    --text: #e6edf3; --text2: #8d96a0; --text3: #6e7681;
+    --accent: #388bfd; --accent2: #1f6feb;
+    --green: #3fb950; --yellow: #d29922; --red: #f85149; --purple: #a371f7;
+    --font: 'Noto Sans JP', sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+    color-scheme: dark;
+  }
+  [data-theme="light"] {
+    --bg: #ffffff; --bg2: #f6f8fa; --bg3: #eaeef2; --bg4: #f1f3f5;
+    --border: #d0d7de; --border2: #afb8c1;
+    --text: #1f2328; --text2: #57606a; --text3: #8c959f;
+    --accent: #0969da; --accent2: #0550ae;
+    --green: #1a7f37; --yellow: #9a6700; --red: #cf222e; --purple: #8250df;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; min-height: 100vh; }
+
+  .header {
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    padding: 12px 24px; display: flex; align-items: center; justify-content: space-between;
+  }
+  .logo { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--accent); letter-spacing: .05em; }
+  .logo span { color: var(--text2); font-weight: 400; }
+
+  .search-bar {
+    padding: 16px 24px; display: flex; align-items: flex-end; gap: 16px;
+    border-bottom: 1px solid var(--border); flex-wrap: wrap;
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; }
+  .control {
+    background: var(--bg4); border: 1px solid var(--border2); border-radius: 6px;
+    color: var(--text); padding: 6px 10px; font-size: 13px; font-family: var(--font);
+    outline: none; transition: .15s; min-width: 180px;
+  }
+  .control:hover, .control:focus { border-color: var(--accent); }
+  .btn {
+    background: var(--accent2); border: 1px solid var(--accent); color: #fff;
+    border-radius: 6px; padding: 7px 18px; font-size: 13px; font-weight: 500;
+    cursor: pointer; font-family: var(--font); transition: .15s;
+  }
+  .btn:hover { filter: brightness(1.1); }
+  .btn-ghost { background: var(--bg4); border-color: var(--border2); color: var(--text2); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--text); }
+
+  .table-wrap { padding: 0 24px 32px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+  thead th {
+    background: var(--bg2); border-bottom: 1px solid var(--border2); border-top: 1px solid var(--border2);
+    padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 500;
+    color: var(--text3); text-transform: uppercase; letter-spacing: .05em; white-space: nowrap;
+  }
+  tbody td { border-bottom: 1px solid var(--border); padding: 9px 12px; vertical-align: middle; }
+  tbody tr:hover td { background: var(--bg2); }
+  .issue-key { font-family: var(--mono); font-size: 11px; color: var(--accent); white-space: nowrap; text-decoration: none; }
+  .issue-key:hover { text-decoration: underline; }
+  .parent-title { color: var(--text); }
+  .mono { font-family: var(--mono); }
+  .pd { font-family: var(--mono); font-weight: 600; color: var(--green); text-align: right; white-space: nowrap; }
+  .sub { color: var(--text3); font-size: 11px; }
+  .empty { padding: 48px; text-align: center; color: var(--text3); }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="logo">BPM<span> / 実施工数確認</span></div>
+  <button class="btn btn-ghost" onclick="toggleTheme()" id="btnTheme">☀ ライト</button>
+</header>
+
+<div class="search-bar">
+  <div class="field">
+    <span class="field-label">名前</span>
+    <select class="control" id="nameFilter">
+      <option value="">すべて</option>
+    </select>
+  </div>
+  <div class="field">
+    <span class="field-label">検索日</span>
+    <input type="date" class="control" id="dateFilter">
+  </div>
+  <button class="btn" onclick="search()">検索</button>
+  <button class="btn btn-ghost" onclick="clearConditions()">条件クリア</button>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th style="min-width:280px">親案件</th>
+        <th>名前</th>
+        <th>追加した日</th>
+        <th style="text-align:right">工数（人日）</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody">
+      <tr><td colspan="4" class="empty">検索条件を指定して「検索」を押してください</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── テーマ ──
+function applyTheme(theme) {
+  const btn = document.getElementById('btnTheme');
+  if (theme === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+    btn.textContent = '🌙 ダーク';
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+    btn.textContent = '☀ ライト';
+  }
+}
+function toggleTheme() {
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  const next = isLight ? 'dark' : 'light';
+  applyTheme(next);
+  localStorage.setItem('bpm2-theme', next);
+}
+
+// ── 名前リスト取得 ──
+async function loadNames() {
+  try {
+    const res = await fetch('/api/worklog/names');
+    if (!res.ok) return;
+    const names = await res.json();
+    const sel = document.getElementById('nameFilter');
+    sel.innerHTML = '<option value="">すべて</option>' +
+      names.map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`).join('');
+  } catch (e) { /* noop */ }
+}
+
+// ── 検索 ──
+async function search() {
+  const name = document.getElementById('nameFilter').value;
+  const date = document.getElementById('dateFilter').value;
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '<tr><td colspan="4" class="empty">検索中...</td></tr>';
+
+  try {
+    const params = new URLSearchParams();
+    if (name) params.set('name', name);
+    if (date) params.set('date', date);
+    const res = await fetch('/api/worklog/search?' + params.toString());
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const rows = await res.json();
+
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">該当するデータがありません</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r =>
+      `<tr>
+        <td>
+          <a href="${r.parentUrl}" target="_blank" class="issue-key">${escHtml(r.parentKey)}</a>
+          <span class="parent-title">${escHtml(r.parentTitle)}</span>
+        </td>
+        <td>${escHtml(r.name)}</td>
+        <td class="mono">${escHtml(r.day)}</td>
+        <td class="pd">${r.personDays} 人日 <span class="sub">(${r.hours}h)</span></td>
+      </tr>`
+    ).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="4" class="empty">検索に失敗しました (${escHtml(e.message)})</td></tr>`;
+  }
+}
+
+function clearConditions() {
+  document.getElementById('nameFilter').value = '';
+  document.getElementById('dateFilter').value = '';
+  document.getElementById('tableBody').innerHTML =
+    '<tr><td colspan="4" class="empty">検索条件を指定して「検索」を押してください</td></tr>';
+}
+
+// ── 起動 ──
+applyTheme(localStorage.getItem('bpm2-theme') || 'dark');
+loadNames();
+</script>
+</body>
+</html>

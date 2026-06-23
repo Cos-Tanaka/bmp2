@@ -10,6 +10,9 @@ services:
       - BACKLOG_API_KEY=${BACKLOG_API_KEY}    # Backlog API キー
       - BACKLOG_PROJECT_KEY=${BACKLOG_PROJECT_KEY}  # 例: ASPIT
       - CACHE_TTL=${CACHE_TTL:-60}            # キャッシュ秒数（デフォルト60秒）
+      - DB_PATH=/app/data/worklog.db          # 実績工数 入力履歴の SQLite 保存先
+    volumes:
+      - bpm-data:/app/data                    # SQLite 永続化
     networks:
       - bpm-net
 
@@ -27,3 +30,6 @@ services:
 networks:
   bpm-net:
     driver: bridge
+
+volumes:
+  bpm-data:

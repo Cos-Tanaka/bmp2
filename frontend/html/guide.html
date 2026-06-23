@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BPM / 使い方ガイド</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  /* ── 実アプリと共通のテーマ変数 ── */
+  :root {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #1c2128; --bg4: #21262d;
+    --border: #30363d; --border2: #3d444d;
+    --text: #e6edf3; --text2: #8d96a0; --text3: #6e7681;
+    --accent: #388bfd; --accent2: #1f6feb;
+    --green: #3fb950; --yellow: #d29922; --red: #f85149; --purple: #a371f7;
+    --font: 'Noto Sans JP', sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+    color-scheme: dark;
+  }
+  [data-theme="light"] {
+    --bg: #ffffff; --bg2: #f6f8fa; --bg3: #eaeef2; --bg4: #f1f3f5;
+    --border: #d0d7de; --border2: #afb8c1;
+    --text: #1f2328; --text2: #57606a; --text3: #8c959f;
+    --accent: #0969da; --accent2: #0550ae;
+    --green: #1a7f37; --yellow: #9a6700; --red: #cf222e; --purple: #8250df;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; line-height: 1.7; }
+
+  /* ── ガイド用レイアウト ── */
+  .g-header {
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    padding: 14px 28px; display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .g-logo { font-family: var(--mono); font-size: 16px; font-weight: 600; color: var(--accent); letter-spacing: .05em; }
+  .g-logo span { color: var(--text2); font-weight: 400; }
+  .btn-theme {
+    background: var(--bg4); border: 1px solid var(--border2); border-radius: 6px;
+    color: var(--text2); padding: 5px 14px; font-size: 12px; cursor: pointer; font-family: var(--font);
+  }
+  .btn-theme:hover { border-color: var(--accent); color: var(--text); }
+
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 28px; }
+
+  .toc {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 24px; margin-bottom: 32px;
+  }
+  .toc h2 { font-size: 13px; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 12px; }
+  .toc ol { margin-left: 18px; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+
+  section { margin-bottom: 48px; scroll-margin-top: 72px; }
+  h1 { font-size: 24px; margin-bottom: 8px; }
+  h2.sec { font-size: 19px; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 2px solid var(--accent2); display: inline-block; }
+  h3 { font-size: 15px; margin: 22px 0 10px; color: var(--text); }
+  p { color: var(--text2); margin-bottom: 12px; }
+  .lead { color: var(--text2); font-size: 15px; margin-bottom: 20px; }
+  ul.notes { margin: 8px 0 12px 22px; color: var(--text2); }
+  ul.notes li { margin-bottom: 6px; }
+  code { font-family: var(--mono); background: var(--bg4); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 12px; color: var(--text); }
+  .tip { background: var(--bg3); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; padding: 12px 16px; margin: 14px 0; color: var(--text2); font-size: 13px; }
+  .tip b { color: var(--text); }
+
+  /* ── 番号付き解説 ── */
+  .marker {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+    background: var(--accent2); color: #fff; font-size: 11px; font-weight: 700;
+    font-family: var(--mono); vertical-align: middle; box-shadow: 0 0 0 2px var(--bg);
+  }
+  ol.legend { margin: 14px 0 0 4px; list-style: none; }
+  ol.legend li { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 8px; color: var(--text2); font-size: 13px; }
+  ol.legend .marker { margin-top: 2px; flex-shrink: 0; }
+
+  /* ── 疑似ブラウザ枠（サンプル画面） ── */
+  .screen {
+    border: 1px solid var(--border2); border-radius: 10px; overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0,0,0,.25); margin: 16px 0;
+  }
+  .screen-bar {
+    background: var(--bg4); border-bottom: 1px solid var(--border2);
+    padding: 8px 12px; display: flex; align-items: center; gap: 7px;
+  }
+  .screen-dot { width: 11px; height: 11px; border-radius: 50%; }
+  .screen-dot.r{background:#ff5f57} .screen-dot.y{background:#febc2e} .screen-dot.g{background:#28c840}
+  .screen-url {
+    margin-left: 10px; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 5px; padding: 3px 12px; font-family: var(--mono); font-size: 11px; color: var(--text3); flex: 1;
+  }
+  .screen-body { background: var(--bg); }
+
+  /* ── 実アプリ由来のコンポーネント（サンプル描画用） ── */
+  .app-header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; }
+  .logo { font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--accent); }
+  .logo span { color: var(--text2); font-weight: 400; }
+  .project-badge { background: var(--bg4); border: 1px solid var(--border2); border-radius: 6px; padding: 3px 10px; font-size: 11px; color: var(--text2); margin-left: 12px; }
+  .header-right { display: flex; align-items: center; gap: 10px; }
+  .pill { background: var(--bg4); border: 1px solid var(--border2); border-radius: 6px; color: var(--text2); padding: 4px 10px; font-size: 11px; }
+  .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); display: inline-block; margin-right: 6px; box-shadow: 0 0 6px var(--green); }
+
+  .summary-bar { padding: 14px 16px; display: flex; gap: 10px; border-bottom: 1px solid var(--border); }
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; flex: 1; }
+  .card-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 5px; }
+  .card-value { font-family: var(--mono); font-size: 19px; font-weight: 600; line-height: 1; }
+  .card-sub { font-size: 10px; color: var(--text3); margin-top: 4px; }
+  .val-blue{color:var(--accent)} .val-green{color:var(--green)} .val-red{color:var(--red)}
+
+  .filter-bar { padding: 9px 16px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .filter-label { font-size: 11px; color: var(--text3); }
+  .chip { background: var(--bg4); border: 1px solid var(--border2); border-radius: 20px; padding: 3px 11px; font-size: 11px; color: var(--text2); }
+  .chip.active { background: var(--accent2); border-color: var(--accent); color: #fff; }
+  .filter-sep { width: 1px; height: 18px; background: var(--border); margin: 0 3px; }
+  .select-filter { background: var(--bg4); border: 1px solid var(--border2); border-radius: 6px; color: var(--text2); padding: 3px 8px; font-size: 11px; }
+
+  table.app { width: 100%; border-collapse: collapse; }
+  table.app thead th { background: var(--bg2); border-bottom: 1px solid var(--border2); border-top: 1px solid var(--border2); padding: 7px 10px; text-align: left; font-size: 10px; font-weight: 500; color: var(--text3); text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+  .row-parent td { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 9px 10px; vertical-align: middle; }
+  .row-child td { background: var(--bg); border-bottom: 1px solid var(--border); padding: 7px 10px; vertical-align: middle; font-size: 12px; }
+  .row-child td:first-child { padding-left: 30px; border-left: 2px solid var(--border2); }
+  .toggle-btn { color: var(--text2); font-size: 13px; transform: rotate(90deg); display: inline-block; }
+  .issue-key { font-family: var(--mono); font-size: 11px; color: var(--accent); margin-right: 6px; }
+  .issue-title { color: var(--text); font-weight: 500; }
+  .issue-title-child { color: var(--text2); border-bottom: 1px dotted var(--text3); }
+  .count-badge { background: var(--bg4); border: 1px solid var(--border2); border-radius: 10px; padding: 1px 7px; font-size: 10px; color: var(--text3); margin-left: 6px; font-family: var(--mono); }
+  .kintone-link { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 3px; background: #00a0e9; color: #fff; font-family: var(--mono); font-size: 10px; font-weight: 700; text-decoration: none; margin-left: 6px; }
+  .avatar { width: 20px; height: 20px; border-radius: 50%; font-size: 9px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; margin-right: 5px; vertical-align: middle; background: rgba(56,139,253,.2); color: var(--accent); }
+  .date-range { font-family: var(--mono); font-size: 11px; color: var(--text2); }
+  .date-range .sep { color: var(--text3); margin: 0 3px; }
+  .hours-cell { font-family: var(--mono); font-size: 12px; }
+  .hours-plan{color:var(--text2)} .hours-actual{color:var(--text)}
+  .hours-edit { text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+  .diff-cell { font-family: var(--mono); font-size: 12px; font-weight: 600; }
+  .diff-over{color:var(--red)} .diff-ok{color:var(--green)} .diff-warn{color:var(--yellow)} .val-blue2{color:var(--accent)}
+  .progress-wrap { min-width: 110px; }
+  .progress-row { display: flex; align-items: center; gap: 5px; margin-bottom: 3px; }
+  .progress-label { font-size: 10px; color: var(--text3); width: 16px; }
+  .progress-bar-bg { flex: 1; height: 5px; background: var(--bg4); border-radius: 3px; overflow: hidden; }
+  .progress-bar-fill { height: 100%; border-radius: 3px; }
+  .bar-plan { background: var(--accent); opacity: .5; }
+  .bar-actual { background: var(--green); }
+  .bar-actual-warn { background: var(--yellow); }
+  .progress-pct { font-family: var(--mono); font-size: 10px; color: var(--text2); width: 28px; text-align: right; }
+  .status-badge { border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 500; display: inline-block; }
+  .s-3 { background: rgba(63,185,80,.15); color: var(--green); border: 1px solid rgba(63,185,80,.3); }
+  .s-default { background: rgba(110,118,129,.15); color: var(--text3); border: 1px solid var(--border2); }
+  .health { font-size: 15px; text-align: center; }
+
+  /* モーダル風 */
+  .mock-modal { background: var(--bg2); border: 1px solid var(--border2); border-radius: 10px; max-width: 520px; margin: 16px auto; overflow: hidden; }
+  .mm-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .mm-key { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+  .mm-title { font-size: 15px; font-weight: 600; }
+  .mm-close { color: var(--text3); }
+  .mm-body { padding: 16px 18px; }
+  .mm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+  .mm-field { display: flex; flex-direction: column; gap: 3px; }
+  .mm-field.full { grid-column: 1 / -1; }
+  .mm-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; }
+  .mm-value { font-size: 13px; }
+  .mm-value.mono { font-family: var(--mono); }
+  .mm-input { background: var(--bg4); border: 1px solid var(--border2); border-radius: 6px; color: var(--text); padding: 5px 8px; font-size: 13px; }
+  .mm-foot { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+  .mm-save { background: var(--green); border: 1px solid var(--green); color: #fff; border-radius: 6px; padding: 6px 16px; font-size: 12px; font-weight: 500; }
+  .mm-link { background: var(--accent2); border: 1px solid var(--accent); color: #fff; border-radius: 6px; padding: 6px 14px; font-size: 12px; text-decoration: none; }
+  .w-hist { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }
+  .w-hist-title { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+  .w-hist-row { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .w-hist-row:last-child { border-bottom: none; }
+  .w-hist-date { font-family: var(--mono); font-size: 11px; color: var(--text3); }
+  .w-hist-hours { font-family: var(--mono); font-weight: 600; color: var(--green); }
+
+  /* 工数確認テーブル */
+  .pd { font-family: var(--mono); font-weight: 600; color: var(--green); text-align: right; }
+  .sub { color: var(--text3); font-size: 11px; }
+</style>
+</head>
+<body>
+
+<header class="g-header">
+  <div class="g-logo">BPM<span> / 使い方ガイド</span></div>
+  <button class="btn-theme" id="btnTheme" onclick="toggleTheme()">☀ ライト</button>
+</header>
+
+<div class="wrap">
+  <h1>BPM 進捗監視盤 ― 使い方ガイド</h1>
+  <p class="lead">本ガイドでは、進捗監視盤（ダッシュボード）の見方、子課題の編集・実績工数の入力、実施工数確認画面の使い方を、サンプル画面付きで説明します。</p>
+
+  <nav class="toc">
+    <h2>目次</h2>
+    <ol>
+      <li><a href="#s1">1. BPMとは</a></li>
+      <li><a href="#s2">2. ダッシュボードの見方</a></li>
+      <li><a href="#s3">3. フィルターで絞り込む</a></li>
+      <li><a href="#s4">4. 子課題の詳細を見る・編集する</a></li>
+      <li><a href="#s5">5. 実績工数を日々入力する</a></li>
+      <li><a href="#s6">6. 実施工数確認画面の使い方</a></li>
+    </ol>
+  </nav>
+
+  <!-- ── 1. BPMとは ── -->
+  <section id="s1">
+    <h2 class="sec">1. BPMとは</h2>
+    <p>BPM（進捗監視盤）は、Backlog の案件（親課題）と子課題の情報をもとに、<b>予定工数・実績工数の対比、進捗率、健全性</b>をリアルタイムに可視化するダッシュボードです。工数超過や期限遅れの早期検知を目的としています。</p>
+    <ul class="notes">
+      <li>データは Backlog から自動取得され、約60秒ごとに更新されます（手動更新も可）。</li>
+      <li>画面は<b>案件（親課題）単位</b>で一覧表示され、各案件を開くと<b>子課題</b>が展開されます。</li>
+      <li>右上のボタンから<b>テーマ（ダーク/ライト）切替</b>、<b>実施工数確認</b>画面、<b>本ガイド</b>を開けます。</li>
+    </ul>
+  </section>
+
+  <!-- ── 2. ダッシュボードの見方 ── -->
+  <section id="s2">
+    <h2 class="sec">2. ダッシュボードの見方</h2>
+    <p>ダッシュボードは「ヘッダー」「サマリーカード」「フィルター」「監視テーブル」で構成されます。</p>
+
+    <div class="screen">
+      <div class="screen-bar"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span><span class="screen-url">http://localhost:3031/</span></div>
+      <div class="screen-body">
+        <div class="app-header">
+          <div style="display:flex;align-items:center">
+            <div class="logo">BPM<span> / 進捗監視盤</span></div>
+            <div class="project-badge">V2A9 プロジェクト</div>
+          </div>
+          <div class="header-right">
+            <span class="pill"><span class="sync-dot"></span>最終同期: 10:32:14</span>
+            <span class="pill">📊 実施工数確認 <span class="marker">8</span></span>
+            <span class="pill">☀ ライト</span>
+            <span class="pill">↻ 更新</span>
+          </div>
+        </div>
+        <div class="summary-bar">
+          <div class="card"><div class="card-label">案件数 <span class="marker">1</span></div><div class="card-value val-blue">12</div><div class="card-sub">進行中 9 ／ 完了 3</div></div>
+          <div class="card"><div class="card-label">予定工数合計</div><div class="card-value">480 h</div><div class="card-sub">子課題 34 件の合計</div></div>
+          <div class="card"><div class="card-label">実績工数合計</div><div class="card-value val-green">421 h</div><div class="card-sub">消化率 88%</div></div>
+          <div class="card"><div class="card-label">予実差</div><div class="card-value val-green">-59 h</div><div class="card-sub">2 案件が超過中</div></div>
+          <div class="card"><div class="card-label">健全性</div><div class="card-value" style="font-size:15px">🟢 8 🟡 2 🔴 2</div><div class="card-sub">要確認 2 件</div></div>
+        </div>
+        <table class="app">
+          <thead><tr>
+            <th style="width:30px"></th><th>案件 / 課題 <span class="marker">2</span></th><th>担当者</th><th>期間</th>
+            <th>予定(h)</th><th>実績(h)</th><th>差分(h)</th><th>残工数(h) <span class="marker">5</span></th>
+            <th>進捗（予定/実績）<span class="marker">3</span></th><th>状態</th><th>ステータス</th><th>健全性 <span class="marker">4</span></th>
+          </tr></thead>
+          <tbody>
+            <tr class="row-parent">
+              <td><span class="toggle-btn">▶</span></td>
+              <td><span class="issue-key">V2A9-1652</span><span class="issue-title">recipe.csvの定期出力機能開発</span><a class="kintone-link" title="kintone">k</a><span class="marker">6</span><span class="count-badge">3</span></td>
+              <td><span class="avatar">田</span>田中</td>
+              <td><span class="date-range">2026-06-01<span class="sep">→</span>2026-06-30</span></td>
+              <td style="text-align:right"><span class="hours-cell hours-plan">120h</span></td>
+              <td style="text-align:right"><span class="hours-cell hours-actual">98h</span></td>
+              <td style="text-align:right"><span class="diff-cell diff-ok">-22</span></td>
+              <td style="text-align:right"><span class="diff-cell val-blue2">0.25人月</span></td>
+              <td><div class="progress-wrap"><div class="progress-row"><span class="progress-label">予</span><div class="progress-bar-bg"><div class="progress-bar-fill bar-plan" style="width:63%"></div></div><span class="progress-pct">63%</span></div><div class="progress-row"><span class="progress-label">実</span><div class="progress-bar-bg"><div class="progress-bar-fill bar-actual" style="width:82%"></div></div><span class="progress-pct">82%</span></div></div></td>
+              <td><span class="status-badge s-3">処理中</span></td>
+              <td><span class="status-badge s-default">41 開発 - 単体工程</span></td>
+              <td class="health">🟢</td>
+            </tr>
+            <tr class="row-child">
+              <td></td>
+              <td><span class="issue-key">V2A9-1706</span><span class="issue-title-child">出力バッチの実装</span></td>
+              <td><span class="avatar">佐</span>佐藤</td>
+              <td><span class="date-range">2026-06-05<span class="sep">→</span>2026-06-15</span></td>
+              <td style="text-align:right"><span class="hours-cell hours-plan">40h</span></td>
+              <td style="text-align:right"><span class="hours-cell hours-actual hours-edit">36h</span> <span class="marker">7</span></td>
+              <td style="text-align:right"><span class="diff-cell diff-ok">-4</span></td>
+              <td style="text-align:right"><span class="diff-cell diff-warn">8h</span></td>
+              <td><div class="progress-wrap"><div class="progress-row"><div class="progress-bar-bg"><div class="progress-bar-fill bar-actual" style="width:90%"></div></div><span class="progress-pct">90%</span></div></div></td>
+              <td><span class="status-badge s-3">処理中</span></td>
+              <td><span class="status-badge s-default">30:レビュー済み</span></td>
+              <td></td>
+            </tr>
+            <tr class="row-child">
+              <td></td>
+              <td><span class="issue-key">V2A9-1707</span><span class="issue-title-child">出力フォーマット定義</span></td>
+              <td><span class="avatar">田</span>田中</td>
+              <td><span class="date-range">2026-06-10<span class="sep">→</span>2026-06-20</span></td>
+              <td style="text-align:right"><span class="hours-cell hours-plan">24h</span></td>
+              <td style="text-align:right"><span class="hours-cell hours-actual hours-edit">30h</span></td>
+              <td style="text-align:right"><span class="diff-cell diff-over">+6</span></td>
+              <td style="text-align:right"><span class="diff-cell diff-over">0h</span></td>
+              <td><div class="progress-wrap"><div class="progress-row"><div class="progress-bar-bg"><div class="progress-bar-fill bar-actual-warn" style="width:100%"></div></div><span class="progress-pct">100%</span></div></div></td>
+              <td><span class="status-badge s-3">処理中</span></td>
+              <td><span class="status-badge s-default">60:品質チェック済み</span></td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="marker">1</span><span><b>サマリーカード</b>：案件数・予定/実績工数の合計・予実差・健全性の内訳を一目で把握できます。</span></li>
+      <li><span class="marker">2</span><span><b>案件 / 課題</b>：先頭の <b>▶</b> をクリックすると子課題が展開されます。グレーの行が親案件、白い行が子課題です。</span></li>
+      <li><span class="marker">3</span><span><b>進捗バー</b>：親行は「予（予定の経過）／実（実績の消化率）」の2本、子行は実績1本。実績が予定を大きく超えると黄→赤に変化します。</span></li>
+      <li><span class="marker">4</span><span><b>健全性</b>：🟢正常／🟡注意（期限間近 or 実績が予定超過）／🔴危険（期限超過 or 実績が予定の120%超）。</span></li>
+      <li><span class="marker">5</span><span><b>残工数</b>：残りの想定工数。予実差に応じて色が変わります（超過=赤、要注意=黄、余裕=青/緑）。親行は人月、子行は時間で表示。</span></li>
+      <li><span class="marker">6</span><span><b>kintoneアイコン</b>：案件に Kintone番号がある場合のみ表示。クリックで該当の kintone レコードを新しいタブで開きます（番号が無い案件には表示されません）。</span></li>
+      <li><span class="marker">7</span><span><b>実績工数（点線下線）</b>：子課題の実績工数はクリックでき、実績工数の入力レイヤーが開きます（→ 5章）。</span></li>
+      <li><span class="marker">8</span><span><b>📊 実施工数確認</b>：実績工数の入力履歴を検索・集計する画面を新しいウィンドウで開きます（→ 6章）。</span></li>
+    </ol>
+
+    <div class="tip"><b>ヒント：</b>各課題番号（<code>V2A9-xxxx</code>）をクリックすると Backlog の課題ページが新しいタブで開きます。</div>
+  </section>
+
+  <!-- ── 3. フィルター ── -->
+  <section id="s3">
+    <h2 class="sec">3. フィルターで絞り込む</h2>
+    <p>監視テーブルは複数の条件で絞り込めます。<b>設定したフィルターはブラウザに保存され、次回開いたときも維持されます。</b></p>
+
+    <div class="screen">
+      <div class="screen-bar"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span><span class="screen-url">http://localhost:3031/</span></div>
+      <div class="screen-body">
+        <div class="filter-bar">
+          <span class="filter-label">健全性</span>
+          <span class="chip active">すべて</span><span class="chip">🟢 正常</span><span class="chip">🟡 注意</span><span class="chip">🔴 危険</span>
+          <span class="filter-sep"></span>
+          <span class="filter-label">状態</span>
+          <span class="chip">対応中</span><span class="chip">完了</span>
+          <span class="filter-sep"></span>
+          <span class="filter-label">担当者</span><span class="select-filter">すべて ▾</span>
+          <span class="filter-sep"></span>
+          <span class="filter-label">子課題ソート</span><span class="select-filter">担当者 ➔ 期間 ▾</span>
+        </div>
+        <div class="filter-bar">
+          <span class="filter-label">ステータス</span>
+          <span class="chip active">すべて</span><span class="chip">概算見積</span><span class="chip">基本設計</span><span class="chip">正式見積</span><span class="chip">開発中</span><span class="chip">テストリリース済み</span><span class="chip">本番リリース済み</span>
+        </div>
+      </div>
+    </div>
+
+    <ul class="notes">
+      <li><b>健全性</b>：🟢/🟡/🔴 で案件を絞り込みます。</li>
+      <li><b>状態</b>：対応中／完了の切り替え（もう一度押すと解除）。</li>
+      <li><b>担当者</b>：親案件の担当者で絞り込み。</li>
+      <li><b>子課題ソート</b>：展開した子課題の並び順（担当者→期間／期間→担当者）。</li>
+      <li><b>ステータス</b>：案件のフェーズ（概算見積〜本番リリース済み）で絞り込み。</li>
+    </ul>
+    <div class="tip"><b>保存される条件：</b>健全性・状態・担当者・ステータス・子課題ソートのすべて。リロードしても直前の絞り込みが復元されます。</div>
+  </section>
+
+  <!-- ── 4. 子課題の詳細・編集 ── -->
+  <section id="s4">
+    <h2 class="sec">4. 子課題の詳細を見る・編集する</h2>
+    <p>子課題の<b>案件名（タイトル）をクリック</b>すると、詳細レイヤーが画面内に開きます。ここでは <b>開始日・期限日・進捗率・チェック状態</b>を変更でき、<b>保存</b>すると Backlog に反映されます。</p>
+
+    <div class="mock-modal">
+      <div class="mm-head">
+        <div><span class="mm-key">V2A9-1706</span><div class="mm-title">出力バッチの実装</div></div>
+        <span class="mm-close">✕</span>
+      </div>
+      <div class="mm-body">
+        <div class="mm-grid">
+          <div class="mm-field full"><span class="mm-label">親案件</span><span class="mm-value">V2A9-1652 recipe.csvの定期出力機能開発</span></div>
+          <div class="mm-field"><span class="mm-label">担当者</span><span class="mm-value">佐藤</span></div>
+          <div class="mm-field"><span class="mm-label">予定工数</span><span class="mm-value mono">40 h</span></div>
+          <div class="mm-field"><span class="mm-label">実績工数</span><span class="mm-value mono">36 h</span></div>
+          <div class="mm-field"><span class="mm-label">残工数</span><span class="mm-value mono">8 h</span></div>
+          <div class="mm-field"><span class="mm-label">開始日 <span class="marker">1</span></span><span class="mm-value mono mm-input">2026-06-05 📅</span></div>
+          <div class="mm-field"><span class="mm-label">期限日 <span class="marker">1</span></span><span class="mm-value mono mm-input">2026-06-15 📅</span></div>
+          <div class="mm-field"><span class="mm-label">進捗率 <span class="marker">2</span></span><span class="mm-value mm-input">90 ▾</span></div>
+          <div class="mm-field"><span class="mm-label">チェック状態 <span class="marker">2</span></span><span class="mm-value mm-input">30:レビュー済み ▾</span></div>
+        </div>
+      </div>
+      <div class="mm-foot">
+        <span class="sub" style="margin-right:auto;color:var(--green)">保存しました</span>
+        <span class="mm-save">保存 <span class="marker">3</span></span>
+        <span class="mm-link">Backlog で開く ↗</span>
+      </div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="marker">1</span><span><b>開始日 / 期限日</b>：日付ピッカーで変更します。「開始日 &gt; 期限日」の場合は保存時にエラーになります。</span></li>
+      <li><span class="marker">2</span><span><b>進捗率 / チェック状態</b>：プルダウンから選択します（Backlog の選択肢と同じ）。</span></li>
+      <li><span class="marker">3</span><span><b>保存</b>：変更した項目だけが Backlog に送信され、ダッシュボードも即座に更新されます。変更が無い場合は「変更がありません」と表示されます。</span></li>
+    </ol>
+    <div class="tip"><b>閉じる：</b>右上の ✕、背景クリック、または <code>Esc</code> キーで閉じられます。</div>
+  </section>
+
+  <!-- ── 5. 実績工数入力 ── -->
+  <section id="s5">
+    <h2 class="sec">5. 実績工数を日々入力する</h2>
+    <p>子課題の<b>実績工数（点線下線のセル）をクリック</b>すると、実績工数の入力レイヤーが開きます。日々の作業時間をここから加算していきます。</p>
+
+    <div class="mock-modal">
+      <div class="mm-head">
+        <div><span class="mm-key">V2A9-1706</span><div class="mm-title">出力バッチの実装</div></div>
+        <span class="mm-close">✕</span>
+      </div>
+      <div class="mm-body">
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div class="mm-field"><span class="mm-label">追加工数 (h) <span style="color:var(--red)">*</span> <span class="marker">1</span></span><span class="mm-value mm-input">1.5</span></div>
+          <div class="mm-field"><span class="mm-label">名前 <span style="color:var(--red)">*</span> <span class="marker">2</span></span><span class="mm-value mm-input">佐藤</span></div>
+          <div style="display:flex;justify-content:flex-end;gap:12px;align-items:center">
+            <span class="sub" style="color:var(--green)">追加しました</span>
+            <span class="mm-save">追加 <span class="marker">3</span></span>
+          </div>
+        </div>
+        <div class="w-hist">
+          <div class="w-hist-title">入力履歴 <span class="marker">4</span></div>
+          <div class="w-hist-row"><span>佐藤</span><span class="w-hist-date">2026/06/14 18:05</span><span class="w-hist-hours">+1.5h</span></div>
+          <div class="w-hist-row"><span>佐藤</span><span class="w-hist-date">2026/06/13 17:40</span><span class="w-hist-hours">+3.0h</span></div>
+          <div class="w-hist-row"><span>佐藤</span><span class="w-hist-date">2026/06/12 19:10</span><span class="w-hist-hours">+2.5h</span></div>
+        </div>
+      </div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="marker">1</span><span><b>追加工数 (h)</b>：今回加算する時間（数値のみ・必須）。例: 1.5。</span></li>
+      <li><span class="marker">2</span><span><b>名前</b>：入力者名（必須）。一度入力するとブラウザに保存され、次回以降は自動入力されます。</span></li>
+      <li><span class="marker">3</span><span><b>追加</b>：押すと ①Backlog の実績工数に加算 ②入力履歴（後述）に記録、の両方が行われます。</span></li>
+      <li><span class="marker">4</span><span><b>入力履歴</b>：この子課題への過去の入力（名前・追加日時・追加工数）が新しい順に表示されます。</span></li>
+    </ol>
+    <div class="tip"><b>バリデーション：</b>追加工数と名前はどちらも必須です。追加工数は数値のみ（0 より大きい値）を受け付けます。</div>
+  </section>
+
+  <!-- ── 6. 実施工数確認 ── -->
+  <section id="s6">
+    <h2 class="sec">6. 実施工数確認画面の使い方</h2>
+    <p>ヘッダーの <b>「📊 実施工数確認」</b> から新しいウィンドウで開きます。入力された実績工数を <b>名前</b> と <b>検索日</b> で検索し、<b>親案件・名前・追加日ごとに集計</b>して人日で表示します。</p>
+
+    <div class="screen">
+      <div class="screen-bar"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span><span class="screen-url">http://localhost:3031/worklog.html</span></div>
+      <div class="screen-body">
+        <div class="app-header"><div class="logo">BPM<span> / 実施工数確認</span></div><span class="pill">☀ ライト</span></div>
+        <div class="filter-bar" style="padding:14px 16px;align-items:flex-end">
+          <div style="display:flex;flex-direction:column;gap:4px"><span class="filter-label">名前 <span class="marker">1</span></span><span class="select-filter" style="min-width:160px;padding:6px 10px">佐藤 ▾</span></div>
+          <div style="display:flex;flex-direction:column;gap:4px"><span class="filter-label">検索日 <span class="marker">2</span></span><span class="select-filter" style="min-width:160px;padding:6px 10px">2026-06-14 📅</span></div>
+          <span class="mm-link" style="padding:7px 18px">検索 <span class="marker">3</span></span>
+          <span class="pill">条件クリア</span>
+        </div>
+        <table class="app">
+          <thead><tr><th style="min-width:260px">親案件 <span class="marker">4</span></th><th>名前</th><th>追加した日</th><th style="text-align:right">工数（人日）<span class="marker">5</span></th></tr></thead>
+          <tbody>
+            <tr><td><span class="issue-key">V2A9-1652</span><span class="issue-title">recipe.csvの定期出力機能開発</span></td><td>佐藤</td><td class="hours-cell">2026-06-14</td><td style="text-align:right"><span class="pd">1.0 人日</span> <span class="sub">(8.0h)</span></td></tr>
+            <tr><td><span class="issue-key">V2A9-1310</span><span class="issue-title">勤務間インターバル警告機能の追加</span></td><td>佐藤</td><td class="hours-cell">2026-06-14</td><td style="text-align:right"><span class="pd">0.5 人日</span> <span class="sub">(4.0h)</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="marker">1</span><span><b>名前</b>：入力履歴に登録された名前の一覧から選びます（「すべて」も可）。</span></li>
+      <li><span class="marker">2</span><span><b>検索日</b>：単一日付で絞り込みます（その日に追加された分のみ）。</span></li>
+      <li><span class="marker">3</span><span><b>検索</b>：条件に一致する履歴を集計して一覧表示します。</span></li>
+      <li><span class="marker">4</span><span><b>親案件</b>：Backlog番号（リンク）＋件名。件名は最新の入力データから取得して表示します。番号クリックで Backlog を開きます。</span></li>
+      <li><span class="marker">5</span><span><b>工数（人日）</b>：<b>親案件 × 名前 × 追加日</b>で合計した工数を人日に換算（1人日 = 8時間）。補足で合計時間も表示します。</span></li>
+    </ol>
+    <div class="tip"><b>集計単位：</b>同じ親案件・同じ名前・同じ日であれば、複数の子課題への入力も1行にまとめて集計されます。</div>
+  </section>
+
+  <p style="text-align:center;color:var(--text3);font-size:12px;margin-top:40px">BPM 進捗監視盤 — 使い方ガイド</p>
+</div>
+
+<script>
+function applyTheme(theme) {
+  const btn = document.getElementById('btnTheme');
+  if (theme === 'light') { document.documentElement.setAttribute('data-theme','light'); btn.textContent = '🌙 ダーク'; }
+  else { document.documentElement.removeAttribute('data-theme'); btn.textContent = '☀ ライト'; }
+}
+function toggleTheme() {
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  const next = isLight ? 'dark' : 'light';
+  applyTheme(next);
+  localStorage.setItem('bpm2-theme', next);
+}
+applyTheme(localStorage.getItem('bpm2-theme') || 'dark');
+</script>
+</body>
+</html>
