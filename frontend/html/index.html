@@ -632,7 +632,10 @@ function renderTable() {
     if (filter.health !== 'all' && row.health !== filter.health) return false;
     if (filter.status === 'done'  && !isParentDone(row)) return false;
     if (filter.status === 'wip'   && isParentDone(row))  return false;
-    if (filter.assignee !== 'all' && row.assignee !== filter.assignee) return false;
+    // 担当者: 親が一致、または子課題に一致があれば表示（親の担当者が異なっても表示する）
+    if (filter.assignee !== 'all'
+        && row.assignee !== filter.assignee
+        && !row.children.some(c => c.assignee === filter.assignee)) return false;
     
     // カスタムステータスのフィルタリング
     if (filter.customStatus !== 'all') {
@@ -668,16 +671,27 @@ function renderTable() {
     const ap  = row.plannedH > 0 ? Math.round(row.actualH / row.plannedH * 100) : 0;
     const health = row.health === 'green' ? '🟢' : row.health === 'yellow' ? '🟡' : '🔴';
 
+    // 担当者フィルタ時: 親が一致しない場合は一致する子課題のみ表示し、自動展開する
+    const assigneeActive = filter.assignee !== 'all';
+    const parentMatches  = !assigneeActive || row.assignee === filter.assignee;
+    const visibleChildren = parentMatches
+      ? row.children
+      : row.children.filter(c => c.assignee === filter.assignee);
+    const autoExpand = assigneeActive && visibleChildren.length > 0;
+    const countBadge = visibleChildren.length === row.children.length
+      ? `${row.children.length}`
+      : `${visibleChildren.length}/${row.children.length}`;
+
     // 親行
     const tr = document.createElement('tr');
-    tr.className = 'row-parent';
+    tr.className = 'row-parent' + (autoExpand ? ' expanded' : '');
     tr.dataset.id = row.id;
     tr.innerHTML = `
-      <td><button class="toggle-btn" onclick="toggle('${row.id}',this)">▶</button></td>
+      <td><button class="toggle-btn${autoExpand ? ' open' : ''}" onclick="toggle('${row.id}',this)">▶</button></td>
       <td>
         <a href="${row.url}" target="_blank" class="issue-key">${row.id}</a>
         <span class="issue-title">${escHtml(row.title)}</span>${kintoneIcon(row.kintoneUrl)}
-        <span class="count-badge">${row.children.length}</span>
+        <span class="count-badge">${countBadge}</span>
       </td>
       <td>${avatarHTML(row.assignee)}</td>
       <td>${dateRange(row.start, row.due)}</td>
@@ -693,7 +707,7 @@ function renderTable() {
     tbody.appendChild(tr);
 
     // 子課題のソート
-    const sortedChildren = [...row.children].sort((a, b) => {
+    const sortedChildren = [...visibleChildren].sort((a, b) => {
       if (filter.childSort === 'assignee-date') {
         const nameA = a.assignee || '未割当';
         const nameB = b.assignee || '未割当';
@@ -719,9 +733,9 @@ function renderTable() {
     sortedChildren.forEach((c, idx) => {
       const cpct = c.progress !== null ? c.progress : (c.plannedH > 0 ? Math.round(c.actualH / c.plannedH * 100) : 0);
       const cr = document.createElement('tr');
-      cr.className = 'row-child' + (idx === row.children.length - 1 ? ' last-child' : '');
+      cr.className = 'row-child' + (idx === sortedChildren.length - 1 ? ' last-child' : '');
       cr.dataset.parent = row.id;
-      cr.style.display = 'none';
+      cr.style.display = autoExpand ? '' : 'none';
       cr.innerHTML = `
         <td></td>
         <td>
@@ -1043,8 +1057,10 @@ function updateAssigneeFilter() {
   if (!select) return;
   const currentVal = filter.assignee;
   
-  // 親課題の担当者を抽出してソート
-  const assignees = [...new Set(allData.map(r => r.assignee).filter(Boolean))].sort();
+  // 親課題・子課題の担当者を抽出してソート
+  const assignees = [...new Set(
+    allData.flatMap(r => [r.assignee, ...r.children.map(c => c.assignee)]).filter(Boolean)
+  )].sort();
   
   let html = '<option value="all">すべて</option>';
   assignees.forEach(a => {
