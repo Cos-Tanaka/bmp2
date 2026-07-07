@@ -238,13 +238,19 @@
   .w-history { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 14px; }
   .w-history-title { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
   .w-hist-row {
-    display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center;
+    display: grid; grid-template-columns: 1fr auto auto auto; gap: 12px; align-items: center;
     padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 12px;
   }
   .w-hist-row:last-child { border-bottom: none; }
   .w-hist-name { color: var(--text); }
   .w-hist-date { font-family: var(--mono); font-size: 11px; color: var(--text3); white-space: nowrap; }
   .w-hist-hours { font-family: var(--mono); font-weight: 600; color: var(--green); white-space: nowrap; text-align: right; }
+  .w-hist-del {
+    background: none; border: none; cursor: pointer; font-size: 13px; line-height: 1;
+    padding: 2px 4px; border-radius: 4px; opacity: .55;
+  }
+  .w-hist-del:hover { opacity: 1; background: var(--bg3, rgba(128,128,128,.15)); }
+  .w-hist-del:disabled { opacity: .3; cursor: default; }
   .w-hist-empty { font-size: 12px; color: var(--text3); padding: 6px 0; }
   .m-link {
     display: inline-block; background: var(--accent2); border: 1px solid var(--accent);
@@ -319,6 +325,10 @@
     <option value="assignee-date">担当者 ➔ 期間</option>
     <option value="date-assignee">期間 ➔ 担当者</option>
   </select>
+  <div class="filter-sep"></div>
+  <span class="filter-label">表示</span>
+  <button class="chip" onclick="setAllExpanded(true)">▼ 全て開く</button>
+  <button class="chip" onclick="setAllExpanded(false)">▶ 全て閉じる</button>
 </div>
 <div class="filter-bar" style="border-top:none">
   <span class="filter-label">ステータス</span>
@@ -369,6 +379,10 @@
         <div class="m-field">
           <span class="m-label">名前 <span style="color:var(--red)">*</span></span>
           <input type="text" class="m-select" id="wName" placeholder="入力者名">
+        </div>
+        <div class="m-field">
+          <span class="m-label">日時 <span style="color:var(--red)">*</span></span>
+          <input type="datetime-local" class="m-select" id="wDate">
         </div>
         <div class="w-form-foot">
           <span class="m-msg" id="wMsg"></span>
@@ -764,6 +778,17 @@ function toggle(id, btn) {
   document.querySelectorAll(`[data-parent="${id}"]`).forEach(r => r.style.display = isOpen ? '' : 'none');
 }
 
+// 全親課題の一括開閉
+function setAllExpanded(open) {
+  const tbody = document.getElementById('tableBody');
+  tbody.querySelectorAll('.row-parent').forEach(tr => {
+    tr.classList.toggle('expanded', open);
+    const btn = tr.querySelector('.toggle-btn');
+    if (btn) btn.classList.toggle('open', open);
+  });
+  tbody.querySelectorAll('.row-child').forEach(r => r.style.display = open ? '' : 'none');
+}
+
 // ── 子課題詳細モーダル ────────────────────────────
 function findChild(childId) {
   for (const row of allData) {
@@ -929,11 +954,18 @@ async function openWorklogModal(childId) {
   document.getElementById('wHours').value = '';
   // 名前は前回入力をブラウザから復元
   document.getElementById('wName').value = localStorage.getItem(WORKLOG_NAME_KEY) || '';
+  document.getElementById('wDate').value = nowLocalDatetime();
   setWorklogMsg('', '');
   document.getElementById('wHistory').innerHTML = '<div class="w-hist-empty">読込中...</div>';
   document.getElementById('worklogModal').classList.add('open');
 
   await loadWorklogHistory(childId);
+}
+
+function nowLocalDatetime() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function fmtDateTime(iso) {
@@ -942,12 +974,15 @@ function fmtDateTime(iso) {
   return d.toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+let worklogRows = [];   // 表示中の履歴（削除時の確認メッセージ用）
+
 async function loadWorklogHistory(childId) {
   const box = document.getElementById('wHistory');
   try {
     const res = await fetch('/api/worklog/' + encodeURIComponent(childId));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const rows = await res.json();
+    worklogRows = rows;
     if (!rows.length) {
       box.innerHTML = '<div class="w-hist-empty">履歴はありません</div>';
       return;
@@ -957,10 +992,40 @@ async function loadWorklogHistory(childId) {
         <span class="w-hist-name">${escHtml(r.name)}</span>
         <span class="w-hist-date">${fmtDateTime(r.added_at)}</span>
         <span class="w-hist-hours">+${r.hours}h</span>
+        <button class="w-hist-del" onclick="deleteWorklog(${r.id})" title="この履歴を削除" aria-label="削除">🗑</button>
       </div>`
     ).join('');
   } catch (e) {
     box.innerHTML = `<div class="w-hist-empty">履歴の取得に失敗しました (${escHtml(e.message)})</div>`;
+  }
+}
+
+async function deleteWorklog(entryId) {
+  if (!worklogChildId) return;
+  const r = worklogRows.find(x => x.id === entryId);
+  if (!r) return;
+  const ok = confirm(
+    `この入力履歴を削除しますか？\n\n` +
+    `${r.name}  ${fmtDateTime(r.added_at)}  +${r.hours}h\n\n` +
+    `子課題の実績工数から ${r.hours}h 減算されます（0 未満になる場合は 0 になります）。`
+  );
+  if (!ok) return;
+
+  document.querySelectorAll('.w-hist-del').forEach(b => b.disabled = true);
+  setWorklogMsg('削除中...', '');
+  try {
+    const res = await fetch('/api/worklog/entry/' + entryId, { method: 'DELETE' });
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try { const j = await res.json(); if (j.error) detail = j.error; } catch (e) {}
+      throw new Error(detail);
+    }
+    setWorklogMsg('削除しました', 'ok');
+  } catch (e) {
+    setWorklogMsg('削除失敗: ' + e.message, 'err');
+  } finally {
+    await loadWorklogHistory(worklogChildId);   // 成否に関わらず履歴を最新化（ボタンも再有効化）
+    await fetchData(true);                       // 背景テーブルを最新化
   }
 }
 
@@ -978,17 +1043,19 @@ async function addWorklog() {
 
   const hoursRaw = document.getElementById('wHours').value.trim();
   const name = document.getElementById('wName').value.trim();
+  const addedAt = document.getElementById('wDate').value;
 
   // 入力された名前はブラウザに保持（次回表示時に復元）
   if (name) { try { localStorage.setItem(WORKLOG_NAME_KEY, name); } catch (e) {} }
 
-  // バリデーション: 両項目必須・追加工数は数値のみ
+  // バリデーション: 全項目必須・追加工数は数値のみ
   if (!hoursRaw && !name) { setWorklogMsg('追加工数(h) と 名前 は必須です', 'err'); return; }
   if (!name) { setWorklogMsg('名前は必須です', 'err'); return; }
   if (!hoursRaw) { setWorklogMsg('追加工数(h) は必須です', 'err'); return; }
   const hours = Number(hoursRaw);
   if (!Number.isFinite(hours)) { setWorklogMsg('追加工数(h) は数値で入力してください', 'err'); return; }
   if (hours <= 0) { setWorklogMsg('追加工数(h) は 0 より大きい数値で入力してください', 'err'); return; }
+  if (!addedAt) { setWorklogMsg('日時は必須です', 'err'); return; }
 
   const btn = document.getElementById('wAdd');
   btn.disabled = true;
@@ -997,7 +1064,7 @@ async function addWorklog() {
     const res = await fetch('/api/worklog/' + encodeURIComponent(worklogChildId), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hours, name, parentKey: p.id, parentTitle: p.title }),
+      body: JSON.stringify({ hours, name, addedAt, parentKey: p.id, parentTitle: p.title }),
     });
     if (!res.ok) {
       let detail = `HTTP ${res.status}`;
@@ -1006,6 +1073,7 @@ async function addWorklog() {
     }
     setWorklogMsg('追加しました', 'ok');
     document.getElementById('wHours').value = '';
+    document.getElementById('wDate').value = nowLocalDatetime();
     await loadWorklogHistory(worklogChildId);   // 履歴更新
     await fetchData(true);                        // 背景テーブルを最新化
   } catch (e) {
