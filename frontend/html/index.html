@@ -325,6 +325,10 @@
     <option value="assignee-date">担当者 ➔ 期間</option>
     <option value="date-assignee">期間 ➔ 担当者</option>
   </select>
+  <div class="filter-sep"></div>
+  <span class="filter-label">表示</span>
+  <button class="chip" onclick="setAllExpanded(true)">▼ 全て開く</button>
+  <button class="chip" onclick="setAllExpanded(false)">▶ 全て閉じる</button>
 </div>
 <div class="filter-bar" style="border-top:none">
   <span class="filter-label">ステータス</span>
@@ -772,6 +776,17 @@ function toggle(id, btn) {
   const isOpen = btn.classList.toggle('open');
   document.querySelector(`[data-id="${id}"]`).classList.toggle('expanded', isOpen);
   document.querySelectorAll(`[data-parent="${id}"]`).forEach(r => r.style.display = isOpen ? '' : 'none');
+}
+
+// 全親課題の一括開閉
+function setAllExpanded(open) {
+  const tbody = document.getElementById('tableBody');
+  tbody.querySelectorAll('.row-parent').forEach(tr => {
+    tr.classList.toggle('expanded', open);
+    const btn = tr.querySelector('.toggle-btn');
+    if (btn) btn.classList.toggle('open', open);
+  });
+  tbody.querySelectorAll('.row-child').forEach(r => r.style.display = open ? '' : 'none');
 }
 
 // ── 子課題詳細モーダル ────────────────────────────
