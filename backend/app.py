@@ -55,11 +55,16 @@ def init_db() -> None:
                 child_key    TEXT NOT NULL,
                 name         TEXT NOT NULL,
                 added_at     TEXT NOT NULL,
-                hours        REAL NOT NULL
+                hours        REAL NOT NULL,
+                deleted_at   TEXT
             )
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_worklog_child ON worklog(child_key)")
+        # 既存DBへのマイグレーション: 論理削除カラムが無ければ追加
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(worklog)").fetchall()]
+        if "deleted_at" not in cols:
+            conn.execute("ALTER TABLE worklog ADD COLUMN deleted_at TEXT")
 
 
 def add_worklog(parent_key, parent_title, child_key, name, hours, added_at=None) -> dict:
@@ -76,10 +81,11 @@ def add_worklog(parent_key, parent_title, child_key, name, hours, added_at=None)
 def get_worklog(child_key: str) -> list:
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT name, added_at, hours FROM worklog WHERE child_key = ? ORDER BY added_at DESC, id DESC",
+            "SELECT id, name, added_at, hours FROM worklog"
+            " WHERE child_key = ? AND deleted_at IS NULL ORDER BY added_at DESC, id DESC",
             (child_key,),
         ).fetchall()
-    return [{"name": r["name"], "added_at": r["added_at"], "hours": r["hours"]} for r in rows]
+    return [{"id": r["id"], "name": r["name"], "added_at": r["added_at"], "hours": r["hours"]} for r in rows]
 
 
 init_db()
@@ -542,6 +548,48 @@ def api_worklog_add(key: str):
         abort(500, description=str(e))
 
 
+@app.route("/api/worklog/entry/<int:entry_id>", methods=["DELETE"])
+def api_worklog_delete(entry_id: int):
+    """
+    入力履歴を論理削除（deleted_at を記録）し、子課題の実績工数から減算する。
+    減算結果が 0 未満になる場合は 0 とする。
+    Backlog の更新に失敗した場合は論理削除もロールバックする。
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT child_key, hours FROM worklog WHERE id = ? AND deleted_at IS NULL",
+            (entry_id,),
+        ).fetchone()
+    if row is None:
+        abort(404, description="対象の履歴が見つかりません（削除済みの可能性があります）")
+
+    try:
+        with get_db() as conn:
+            # 論理削除（同時操作で既に削除済みなら中断）
+            cur = conn.execute(
+                "UPDATE worklog SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
+                (now_jst_iso(), entry_id),
+            )
+            if cur.rowcount == 0:
+                return jsonify({"error": "対象の履歴は既に削除されています"}), 409
+
+            # Backlog の実績工数から減算（0 未満は 0 に丸め）。失敗時は例外 → 論理削除もロールバック
+            issue = backlog_get(f"/issues/{row['child_key']}")
+            current = issue.get("actualHours") or 0
+            new_total = max(0, round(current - row["hours"], 2))
+            backlog_patch(f"/issues/{row['child_key']}", {"actualHours": new_total})
+
+        # ダッシュボードへ即時反映
+        _cache.pop("issues", None)
+        return jsonify({"ok": True, "actualHours": new_total})
+    except requests.HTTPError as e:
+        log.error("Backlog update error: %s", e)
+        abort(502, description=f"Backlog API error: {e.response.status_code}")
+    except Exception as e:
+        log.exception("Unexpected error")
+        abort(500, description=str(e))
+
+
 HOURS_PER_PERSON_DAY = float(os.environ.get("HOURS_PER_PERSON_DAY", 8))
 
 
@@ -551,7 +599,7 @@ def api_worklog_names():
     try:
         with get_db() as conn:
             rows = conn.execute(
-                "SELECT DISTINCT name FROM worklog ORDER BY name"
+                "SELECT DISTINCT name FROM worklog WHERE deleted_at IS NULL ORDER BY name"
             ).fetchall()
         return jsonify([r["name"] for r in rows])
     except Exception as e:
@@ -579,7 +627,8 @@ def api_worklog_search():
                        date(w1.added_at) AS day,
                        SUM(w1.hours) AS total_hours
                 FROM worklog w1
-                WHERE (? = '' OR w1.name = ?)
+                WHERE w1.deleted_at IS NULL
+                  AND (? = '' OR w1.name = ?)
                   AND (? = '' OR date(w1.added_at) = ?)
                 GROUP BY w1.parent_key, w1.name, date(w1.added_at)
                 ORDER BY day DESC, w1.parent_key, w1.name
@@ -607,6 +656,8 @@ def api_health():
 
 
 @app.errorhandler(400)
+@app.errorhandler(404)
+@app.errorhandler(409)
 @app.errorhandler(502)
 @app.errorhandler(500)
 def handle_error(e):
