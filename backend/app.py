@@ -62,8 +62,8 @@ def init_db() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_worklog_child ON worklog(child_key)")
 
 
-def add_worklog(parent_key, parent_title, child_key, name, hours) -> dict:
-    added_at = now_jst_iso()
+def add_worklog(parent_key, parent_title, child_key, name, hours, added_at=None) -> dict:
+    added_at = added_at or now_jst_iso()
     with get_db() as conn:
         cur = conn.execute(
             "INSERT INTO worklog (parent_key, parent_title, child_key, name, added_at, hours)"
@@ -491,14 +491,15 @@ def api_worklog_list(key: str):
 def api_worklog_add(key: str):
     """
     子課題の実績工数を日々入力する。
-    body(JSON): { "hours": number, "name": str, "parentKey": str, "parentTitle": str }
-    - バリデーション: hours/name は必須、hours は数値のみ
+    body(JSON): { "hours": number, "name": str, "addedAt": str?, "parentKey": str, "parentTitle": str }
+    - バリデーション: hours/name は必須、hours は数値のみ、addedAt は ISO 形式（省略時はサーバー現在時刻）
     - Backlog の actualHours に加算し、SQLite に履歴を保存する
     """
     body = request.get_json(silent=True) or {}
     name = (body.get("name") or "").strip()
     parent_key   = (body.get("parentKey") or "").strip()
     parent_title = (body.get("parentTitle") or "").strip()
+    added_at_raw = (body.get("addedAt") or "").strip()
 
     # ── バリデーション ──
     if not name:
@@ -509,6 +510,16 @@ def api_worklog_add(key: str):
         abort(400, description="追加工数(h) は数値で入力してください")
     if hours <= 0:
         abort(400, description="追加工数(h) は 0 より大きい数値で入力してください")
+    added_at = None
+    if added_at_raw:
+        try:
+            dt = datetime.datetime.fromisoformat(added_at_raw)
+        except ValueError:
+            abort(400, description="日時の形式が不正です")
+        # tz 付きは JST に変換し、DB の naive JST 文字列形式に揃える
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(JST).replace(tzinfo=None)
+        added_at = dt.isoformat(timespec="seconds")
 
     try:
         # Backlog の現在の実績工数を取得して加算
@@ -518,7 +529,7 @@ def api_worklog_add(key: str):
         backlog_patch(f"/issues/{key}", {"actualHours": new_total})
 
         # SQLite に履歴保存
-        entry = add_worklog(parent_key, parent_title, key, name, hours)
+        entry = add_worklog(parent_key, parent_title, key, name, hours, added_at)
 
         # ダッシュボードへ即時反映
         _cache.pop("issues", None)

@@ -370,6 +370,10 @@
           <span class="m-label">名前 <span style="color:var(--red)">*</span></span>
           <input type="text" class="m-select" id="wName" placeholder="入力者名">
         </div>
+        <div class="m-field">
+          <span class="m-label">日時 <span style="color:var(--red)">*</span></span>
+          <input type="datetime-local" class="m-select" id="wDate">
+        </div>
         <div class="w-form-foot">
           <span class="m-msg" id="wMsg"></span>
           <button class="m-save" id="wAdd" onclick="addWorklog()">追加</button>
@@ -929,11 +933,18 @@ async function openWorklogModal(childId) {
   document.getElementById('wHours').value = '';
   // 名前は前回入力をブラウザから復元
   document.getElementById('wName').value = localStorage.getItem(WORKLOG_NAME_KEY) || '';
+  document.getElementById('wDate').value = nowLocalDatetime();
   setWorklogMsg('', '');
   document.getElementById('wHistory').innerHTML = '<div class="w-hist-empty">読込中...</div>';
   document.getElementById('worklogModal').classList.add('open');
 
   await loadWorklogHistory(childId);
+}
+
+function nowLocalDatetime() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function fmtDateTime(iso) {
@@ -978,17 +989,19 @@ async function addWorklog() {
 
   const hoursRaw = document.getElementById('wHours').value.trim();
   const name = document.getElementById('wName').value.trim();
+  const addedAt = document.getElementById('wDate').value;
 
   // 入力された名前はブラウザに保持（次回表示時に復元）
   if (name) { try { localStorage.setItem(WORKLOG_NAME_KEY, name); } catch (e) {} }
 
-  // バリデーション: 両項目必須・追加工数は数値のみ
+  // バリデーション: 全項目必須・追加工数は数値のみ
   if (!hoursRaw && !name) { setWorklogMsg('追加工数(h) と 名前 は必須です', 'err'); return; }
   if (!name) { setWorklogMsg('名前は必須です', 'err'); return; }
   if (!hoursRaw) { setWorklogMsg('追加工数(h) は必須です', 'err'); return; }
   const hours = Number(hoursRaw);
   if (!Number.isFinite(hours)) { setWorklogMsg('追加工数(h) は数値で入力してください', 'err'); return; }
   if (hours <= 0) { setWorklogMsg('追加工数(h) は 0 より大きい数値で入力してください', 'err'); return; }
+  if (!addedAt) { setWorklogMsg('日時は必須です', 'err'); return; }
 
   const btn = document.getElementById('wAdd');
   btn.disabled = true;
@@ -997,7 +1010,7 @@ async function addWorklog() {
     const res = await fetch('/api/worklog/' + encodeURIComponent(worklogChildId), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hours, name, parentKey: p.id, parentTitle: p.title }),
+      body: JSON.stringify({ hours, name, addedAt, parentKey: p.id, parentTitle: p.title }),
     });
     if (!res.ok) {
       let detail = `HTTP ${res.status}`;
@@ -1006,6 +1019,7 @@ async function addWorklog() {
     }
     setWorklogMsg('追加しました', 'ok');
     document.getElementById('wHours').value = '';
+    document.getElementById('wDate').value = nowLocalDatetime();
     await loadWorklogHistory(worklogChildId);   // 履歴更新
     await fetchData(true);                        // 背景テーブルを最新化
   } catch (e) {
