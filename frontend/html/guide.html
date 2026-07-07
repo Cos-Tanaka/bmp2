@@ -168,10 +168,11 @@
   .mm-link { background: var(--accent2); border: 1px solid var(--accent); color: #fff; border-radius: 6px; padding: 6px 14px; font-size: 12px; text-decoration: none; }
   .w-hist { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }
   .w-hist-title { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
-  .w-hist-row { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .w-hist-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 12px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
   .w-hist-row:last-child { border-bottom: none; }
   .w-hist-date { font-family: var(--mono); font-size: 11px; color: var(--text3); }
   .w-hist-hours { font-family: var(--mono); font-weight: 600; color: var(--green); }
+  .w-hist-del { opacity: .55; cursor: pointer; }
 
   /* 工数確認テーブル */
   .pd { font-family: var(--mono); font-weight: 600; color: var(--green); text-align: right; }
@@ -198,6 +199,7 @@
       <li><a href="#s4">4. 子課題の詳細を見る・編集する</a></li>
       <li><a href="#s5">5. 実績工数を日々入力する</a></li>
       <li><a href="#s6">6. 実施工数確認画面の使い方</a></li>
+      <li><a href="#s7">7. リリースノート</a></li>
     </ol>
   </nav>
 
@@ -325,6 +327,9 @@
           <span class="filter-label">担当者</span><span class="select-filter">すべて ▾</span>
           <span class="filter-sep"></span>
           <span class="filter-label">子課題ソート</span><span class="select-filter">担当者 ➔ 期間 ▾</span>
+          <span class="filter-sep"></span>
+          <span class="filter-label">表示 <span class="marker">1</span></span>
+          <span class="chip">▼ 全て開く</span><span class="chip">▶ 全て閉じる</span>
         </div>
         <div class="filter-bar">
           <span class="filter-label">ステータス</span>
@@ -338,6 +343,7 @@
       <li><b>状態</b>：対応中／完了の切り替え（もう一度押すと解除）。</li>
       <li><b>担当者</b>：親案件の担当者で絞り込み。</li>
       <li><b>子課題ソート</b>：展開した子課題の並び順（担当者→期間／期間→担当者）。</li>
+      <li><span class="marker">1</span> <b>表示（全て開く／全て閉じる）</b>：すべての案件の子課題を一括で展開／折りたたみます。担当者で絞り込むと該当案件が自動展開されるため、案件数が多いときは <b>「▶ 全て閉じる」</b> でまとめて畳むと見やすくなります。</li>
       <li><b>ステータス</b>：案件のフェーズ（概算見積〜本番リリース済み）で絞り込み。</li>
     </ul>
     <div class="tip"><b>保存される条件：</b>健全性・状態・担当者・ステータス・子課題ソートのすべて。リロードしても直前の絞り込みが復元されます。</div>
@@ -395,16 +401,17 @@
         <div style="display:flex;flex-direction:column;gap:12px">
           <div class="mm-field"><span class="mm-label">追加工数 (h) <span style="color:var(--red)">*</span> <span class="marker">1</span></span><span class="mm-value mm-input">1.5</span></div>
           <div class="mm-field"><span class="mm-label">名前 <span style="color:var(--red)">*</span> <span class="marker">2</span></span><span class="mm-value mm-input">佐藤</span></div>
+          <div class="mm-field"><span class="mm-label">日時 <span style="color:var(--red)">*</span> <span class="marker">3</span></span><span class="mm-value mm-input mono">2026-06-14 18:05 📅</span></div>
           <div style="display:flex;justify-content:flex-end;gap:12px;align-items:center">
             <span class="sub" style="color:var(--green)">追加しました</span>
-            <span class="mm-save">追加 <span class="marker">3</span></span>
+            <span class="mm-save">追加 <span class="marker">4</span></span>
           </div>
         </div>
         <div class="w-hist">
-          <div class="w-hist-title">入力履歴 <span class="marker">4</span></div>
-          <div class="w-hist-row"><span>佐藤</span><span class="w-hist-date">2026/06/14 18:05</span><span class="w-hist-hours">+1.5h</span></div>
-          <div class="w-hist-row"><span>佐藤</span><span class="w-hist-date">2026/06/13 17:40</span><span class="w-hist-hours">+3.0h</span></div>
-          <div class="w-hist-row"><span>佐藤</span><span class="w-hist-date">2026/06/12 19:10</span><span class="w-hist-hours">+2.5h</span></div>
+          <div class="w-hist-title">入力履歴 <span class="marker">5</span></div>
+          <div class="w-hist-row"><span>佐藤</span><span class="w-hist-date">2026/06/14 18:05</span><span class="w-hist-hours">+1.5h</span><span class="w-hist-del">🗑 <span class="marker">6</span></span></div>
+          <div class="w-hist-row"><span>佐藤</span><span class="w-hist-date">2026/06/13 17:40</span><span class="w-hist-hours">+3.0h</span><span class="w-hist-del">🗑</span></div>
+          <div class="w-hist-row"><span>佐藤</span><span class="w-hist-date">2026/06/12 19:10</span><span class="w-hist-hours">+2.5h</span><span class="w-hist-del">🗑</span></div>
         </div>
       </div>
     </div>
@@ -412,10 +419,13 @@
     <ol class="legend">
       <li><span class="marker">1</span><span><b>追加工数 (h)</b>：今回加算する時間（数値のみ・必須）。例: 1.5。</span></li>
       <li><span class="marker">2</span><span><b>名前</b>：入力者名（必須）。一度入力するとブラウザに保存され、次回以降は自動入力されます。</span></li>
-      <li><span class="marker">3</span><span><b>追加</b>：押すと ①Backlog の実績工数に加算 ②入力履歴（後述）に記録、の両方が行われます。</span></li>
-      <li><span class="marker">4</span><span><b>入力履歴</b>：この子課題への過去の入力（名前・追加日時・追加工数）が新しい順に表示されます。</span></li>
+      <li><span class="marker">3</span><span><b>日時</b>：入力を記録する日時（必須）。レイヤーを開いた時点の現在日時が初期値として入りますが、過去の作業を後からまとめて入力する場合などは自由に変更できます。ここで指定した日時が入力履歴と「実施工数確認」画面の集計日になります。</span></li>
+      <li><span class="marker">4</span><span><b>追加</b>：押すと ①Backlog の実績工数に加算 ②入力履歴（後述）に記録、の両方が行われます。</span></li>
+      <li><span class="marker">5</span><span><b>入力履歴</b>：この子課題への過去の入力（名前・日時・追加工数）が新しい順に表示されます。</span></li>
+      <li><span class="marker">6</span><span><b>🗑 削除</b>：その履歴を削除します。クリックすると確認ダイアログが表示され、実行すると ①入力履歴から削除 ②Backlog の実績工数からその分を減算、が行われます（減算結果がマイナスになる場合は 0 になります）。</span></li>
     </ol>
-    <div class="tip"><b>バリデーション：</b>追加工数と名前はどちらも必須です。追加工数は数値のみ（0 より大きい値）を受け付けます。</div>
+    <div class="tip"><b>バリデーション：</b>追加工数・名前・日時はいずれも必須です。追加工数は数値のみ（0 より大きい値）を受け付けます。</div>
+    <div class="tip"><b>削除について：</b>削除しても記録自体はデータベース上に残る<b>論理削除</b>のため、一覧・集計からは除外されますが、後から追跡は可能です。実績工数の減算は 0 未満にはならず 0 で止まります。</div>
   </section>
 
   <!-- ── 6. 実施工数確認 ── -->
@@ -451,6 +461,22 @@
       <li><span class="marker">5</span><span><b>工数（人日）</b>：<b>親案件 × 名前 × 追加日</b>で合計した工数を人日に換算（1人日 = 8時間）。補足で合計時間も表示します。</span></li>
     </ol>
     <div class="tip"><b>集計単位：</b>同じ親案件・同じ名前・同じ日であれば、複数の子課題への入力も1行にまとめて集計されます。</div>
+  </section>
+
+  <!-- ── 7. リリースノート ── -->
+  <section id="s7">
+    <h2 class="sec">7. リリースノート</h2>
+    <p class="lead">機能追加・変更の履歴です。新しいものが上に並びます。</p>
+
+    <h3>2026-07-07</h3>
+    <ul class="notes">
+      <li><b>実績工数の入力に「日時」を指定できるようになりました</b>（→ <a href="#s5" style="color:var(--accent)">5章</a>）。<br>
+        入力レイヤーに <b>日時</b> 欄を追加しました。初期値は開いた時点の現在日時ですが、過去の作業を後からまとめて入力する場合などに変更できます。ここで指定した日時が入力履歴と「実施工数確認」画面の集計日になります。</li>
+      <li><b>入力履歴を削除できるようになりました</b>（→ <a href="#s5" style="color:var(--accent)">5章</a>）。<br>
+        入力履歴の各行に <b>🗑 削除</b> ボタンを追加しました。クリックすると確認ダイアログが表示され、実行すると入力履歴からの削除と Backlog 実績工数の減算（0 未満にはなりません）が同時に行われます。削除は記録が残る<b>論理削除</b>で、一覧・集計からは除外されます。</li>
+      <li><b>案件の「全て開く／全て閉じる」ボタンを追加しました</b>（→ <a href="#s3" style="color:var(--accent)">3章</a>）。<br>
+        フィルターバーの「表示」に一括開閉ボタンを追加しました。担当者で絞り込むと該当案件が自動展開されるため、案件数が多いときにまとめて折りたためます。</li>
+    </ul>
   </section>
 
   <p style="text-align:center;color:var(--text3);font-size:12px;margin-top:40px">BPM 進捗監視盤 — 使い方ガイド</p>
