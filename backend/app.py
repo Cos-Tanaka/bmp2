@@ -590,9 +590,6 @@ def api_worklog_delete(entry_id: int):
         abort(500, description=str(e))
 
 
-HOURS_PER_PERSON_DAY = float(os.environ.get("HOURS_PER_PERSON_DAY", 8))
-
-
 @app.route("/api/worklog/names", methods=["GET"])
 def api_worklog_names():
     """SQLite に登録された名前を重複なく返す（検索条件のリスト用）。"""
@@ -611,7 +608,7 @@ def api_worklog_names():
 def api_worklog_search():
     """
     実施工数の検索。検索条件: name（任意）, date（任意・単一日付 YYYY-MM-DD）。
-    親案件・子案件・追加日ごとに工数を集計し、人日に換算して返す。
+    親案件・子案件・追加日ごとに工数を集計し、時間で返す。
     """
     name = (request.args.get("name") or "").strip()
     date = (request.args.get("date") or "").strip()
@@ -641,7 +638,6 @@ def api_worklog_search():
             "parentUrl":   f"https://{SPACE}/view/{r['parent_key']}",
             "name":        r["name"],
             "day":         r["day"],
-            "personDays":  round(r["total_hours"] / HOURS_PER_PERSON_DAY, 2),
             "hours":       round(r["total_hours"], 2),
         } for r in rows]
         return jsonify(result)
