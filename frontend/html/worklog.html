@@ -102,7 +102,7 @@
         <th style="min-width:280px">親案件</th>
         <th>名前</th>
         <th>追加した日</th>
-        <th style="text-align:right">工数（人日）</th>
+        <th style="text-align:right">工数（時間）</th>
       </tr>
     </thead>
     <tbody id="tableBody">
@@ -173,7 +173,7 @@ async function search() {
         </td>
         <td>${escHtml(r.name)}</td>
         <td class="mono">${escHtml(r.day)}</td>
-        <td class="pd">${r.personDays} 人日 <span class="sub">(${r.hours}h)</span></td>
+        <td class="pd">${r.hours}h</td>
       </tr>`
     ).join('');
   } catch (e) {

@@ -431,7 +431,7 @@
   <!-- ── 6. 実施工数確認 ── -->
   <section id="s6">
     <h2 class="sec">6. 実施工数確認画面の使い方</h2>
-    <p>ヘッダーの <b>「📊 実施工数確認」</b> から新しいウィンドウで開きます。入力された実績工数を <b>名前</b> と <b>検索日</b> で検索し、<b>親案件・名前・追加日ごとに集計</b>して人日で表示します。</p>
+    <p>ヘッダーの <b>「📊 実施工数確認」</b> から新しいウィンドウで開きます。入力された実績工数を <b>名前</b> と <b>検索日</b> で検索し、<b>親案件・名前・追加日ごとに集計</b>して時間で表示します。</p>
 
     <div class="screen">
       <div class="screen-bar"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span><span class="screen-url">http://localhost:3031/worklog.html</span></div>
@@ -444,10 +444,10 @@
           <span class="pill">条件クリア</span>
         </div>
         <table class="app">
-          <thead><tr><th style="min-width:260px">親案件 <span class="marker">4</span></th><th>名前</th><th>追加した日</th><th style="text-align:right">工数（人日）<span class="marker">5</span></th></tr></thead>
+          <thead><tr><th style="min-width:260px">親案件 <span class="marker">4</span></th><th>名前</th><th>追加した日</th><th style="text-align:right">工数（時間）<span class="marker">5</span></th></tr></thead>
           <tbody>
-            <tr><td><span class="issue-key">V2A9-1652</span><span class="issue-title">recipe.csvの定期出力機能開発</span></td><td>佐藤</td><td class="hours-cell">2026-06-14</td><td style="text-align:right"><span class="pd">1.0 人日</span> <span class="sub">(8.0h)</span></td></tr>
-            <tr><td><span class="issue-key">V2A9-1310</span><span class="issue-title">勤務間インターバル警告機能の追加</span></td><td>佐藤</td><td class="hours-cell">2026-06-14</td><td style="text-align:right"><span class="pd">0.5 人日</span> <span class="sub">(4.0h)</span></td></tr>
+            <tr><td><span class="issue-key">V2A9-1652</span><span class="issue-title">recipe.csvの定期出力機能開発</span></td><td>佐藤</td><td class="hours-cell">2026-06-14</td><td style="text-align:right"><span class="pd">8.0h</span></td></tr>
+            <tr><td><span class="issue-key">V2A9-1310</span><span class="issue-title">勤務間インターバル警告機能の追加</span></td><td>佐藤</td><td class="hours-cell">2026-06-14</td><td style="text-align:right"><span class="pd">4.0h</span></td></tr>
           </tbody>
         </table>
       </div>
@@ -458,7 +458,7 @@
       <li><span class="marker">2</span><span><b>検索日</b>：単一日付で絞り込みます（その日に追加された分のみ）。</span></li>
       <li><span class="marker">3</span><span><b>検索</b>：条件に一致する履歴を集計して一覧表示します。</span></li>
       <li><span class="marker">4</span><span><b>親案件</b>：Backlog番号（リンク）＋件名。件名は最新の入力データから取得して表示します。番号クリックで Backlog を開きます。</span></li>
-      <li><span class="marker">5</span><span><b>工数（人日）</b>：<b>親案件 × 名前 × 追加日</b>で合計した工数を人日に換算（1人日 = 8時間）。補足で合計時間も表示します。</span></li>
+      <li><span class="marker">5</span><span><b>工数（時間）</b>：<b>親案件 × 名前 × 追加日</b>で合計した工数を時間で表示します。</span></li>
     </ol>
     <div class="tip"><b>集計単位：</b>同じ親案件・同じ名前・同じ日であれば、複数の子課題への入力も1行にまとめて集計されます。</div>
   </section>
