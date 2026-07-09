@@ -4,10 +4,12 @@ Backlog API からデータを取得し、フロントエンド向けに整形�
 """
 import os
 import re
+import json
 import time
 import sqlite3
 import logging
 import datetime
+import threading
 from functools import wraps
 from flask import Flask, jsonify, abort, request
 import requests
@@ -34,7 +36,83 @@ BASE_URL   = f"https://{SPACE}/api/v2"
 DB_PATH    = os.environ.get("DB_PATH", "/app/data/worklog.db")
 
 # ── シンプルインメモリキャッシュ ────────────────────
+# project_id / custom_fields など「めったに変わらない」値の短期キャッシュに使う。
+# issues 一覧は下記の常時ウォームなスナップショット層で別管理する。
 _cache: dict = {}
+
+# ── issues スナップショット層 ───────────────────────
+# Backlog 全件取得は 1 回 ~20 秒かかるため、リクエスト契機で取りに行かず、
+# バックグラウンドスレッドが CACHE_TTL ごとに先回りして取得・保持する。
+# /api/issues は常にこのスナップショットを即返すので、ユーザーが取得を待つことはない。
+# スナップショットはディスクにも永続化し、再起動直後も「多少古いが即表示」を実現する。
+SNAPSHOT_PATH   = os.path.join(os.path.dirname(DB_PATH), "issues_snapshot.json")
+_snapshot: dict = {"data": None, "ts": 0.0}
+_snapshot_lock  = threading.Lock()   # _snapshot の読み書き保護（短時間）
+_refresh_lock   = threading.Lock()   # 同時多重取得を防ぐ（Backlog取得中は 1 本に絞る）
+
+
+def _save_snapshot(data: list, ts: float) -> None:
+    """スナップショットをディスクへアトミックに保存する。"""
+    try:
+        os.makedirs(os.path.dirname(SNAPSHOT_PATH), exist_ok=True)
+        tmp = SNAPSHOT_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"ts": ts, "data": data}, f, ensure_ascii=False)
+        os.replace(tmp, SNAPSHOT_PATH)
+    except Exception:
+        log.exception("Failed to persist issues snapshot")
+
+
+def _load_snapshot() -> None:
+    """起動時にディスクのスナップショットを読み込む（あれば即表示に使える）。"""
+    try:
+        with open(SNAPSHOT_PATH, encoding="utf-8") as f:
+            payload = json.load(f)
+        with _snapshot_lock:
+            _snapshot["data"] = payload.get("data")
+            _snapshot["ts"]   = payload.get("ts", 0.0)
+        age = int(time.time() - _snapshot["ts"])
+        log.info("Loaded issues snapshot from disk (%d parents, age=%ds)",
+                 len(_snapshot["data"] or []), age)
+    except FileNotFoundError:
+        log.info("No issues snapshot on disk yet (cold start)")
+    except Exception:
+        log.exception("Failed to load issues snapshot")
+
+
+def refresh_snapshot() -> list:
+    """Backlog から最新を取得してスナップショット（メモリ＋ディスク）を更新する。
+
+    _refresh_lock で同時取得を 1 本に絞る。取得中に来た別スレッドはロック解放後、
+    更新済みの最新スナップショットをそのまま受け取る。
+    """
+    with _refresh_lock:
+        started = time.time()
+        data = _fetch_and_build()
+        ts = time.time()
+        with _snapshot_lock:
+            _snapshot["data"] = data
+            _snapshot["ts"]   = ts
+        _save_snapshot(data, ts)
+        log.info("Snapshot refreshed in %.1fs (%d parents)", ts - started, len(data))
+        return data
+
+
+def _snapshot_refresher() -> None:
+    """CACHE_TTL ごとにスナップショットを先回り更新するバックグラウンドループ。"""
+    # 起動直後、ディスクに何も無ければ最初の 1 回をここで取得（リクエストは待たせない）
+    if _snapshot["data"] is None:
+        try:
+            refresh_snapshot()
+        except Exception:
+            log.exception("Initial snapshot refresh failed")
+    while True:
+        time.sleep(CACHE_TTL)
+        try:
+            refresh_snapshot()
+        except Exception:
+            # 取得失敗時は直前のスナップショットを保持したまま次サイクルへ
+            log.exception("Background snapshot refresh failed")
 
 # ── SQLite（実績工数の日々入力履歴）──────────────────
 def get_db() -> sqlite3.Connection:
@@ -384,10 +462,15 @@ def build_response(parents: list, children_map: dict, progress_field_id: int | N
 def api_issues():
     """
     親課題＋子課題の進捗データを返す。
-    CACHE_TTL 秒ごとに Backlog API を再取得。
+    常時ウォームなスナップショットを即返す（Backlog 取得はバックグラウンドで先回り実施）。
+    スナップショットが未生成の初回のみ、同期取得してから返す。
     """
     try:
-        data = _get_issues_cached()
+        with _snapshot_lock:
+            data = _snapshot["data"]
+        if data is None:
+            # ディスクにもメモリにも無い真のコールドスタート時のみ同期取得
+            data = refresh_snapshot()
         return jsonify(data)
     except requests.HTTPError as e:
         log.error("Backlog API error: %s", e)
@@ -397,8 +480,8 @@ def api_issues():
         abort(500, description=str(e))
 
 
-@cached("issues", ttl=CACHE_TTL)
-def _get_issues_cached():
+def _fetch_and_build():
+    """Backlog から全課題を取得し、フロント向けに整形した一覧を返す（キャッシュなし）。"""
     log.info("Fetching issues from Backlog (project=%s)", PROJECT)
 
     custom_fields = get_custom_fields()
@@ -472,8 +555,8 @@ def api_update_issue(key: str):
 
     try:
         updated = backlog_patch(f"/issues/{key}", data)
-        # ダッシュボード一覧へ即時反映させるためキャッシュ破棄
-        _cache.pop("issues", None)
+        # ダッシュボード一覧へ即時反映させるためスナップショットを同期更新
+        refresh_snapshot()
         return jsonify({"ok": True, "issueKey": updated.get("issueKey", key)})
     except requests.HTTPError as e:
         log.error("Backlog update error: %s", e)
@@ -538,7 +621,7 @@ def api_worklog_add(key: str):
         entry = add_worklog(parent_key, parent_title, key, name, hours, added_at)
 
         # ダッシュボードへ即時反映
-        _cache.pop("issues", None)
+        refresh_snapshot()
         return jsonify({"ok": True, "actualHours": new_total, "entry": entry})
     except requests.HTTPError as e:
         log.error("Backlog update error: %s", e)
@@ -580,7 +663,7 @@ def api_worklog_delete(entry_id: int):
             backlog_patch(f"/issues/{row['child_key']}", {"actualHours": new_total})
 
         # ダッシュボードへ即時反映
-        _cache.pop("issues", None)
+        refresh_snapshot()
         return jsonify({"ok": True, "actualHours": new_total})
     except requests.HTTPError as e:
         log.error("Backlog update error: %s", e)
@@ -658,6 +741,14 @@ def api_health():
 @app.errorhandler(500)
 def handle_error(e):
     return jsonify({"error": str(e.description)}), e.code
+
+
+# ── スナップショット層の起動 ─────────────────────────
+# 全関数定義後に実行する。ディスクの前回スナップショットを読み込み（あれば即表示可）、
+# バックグラウンド更新スレッドを 1 本起動する。
+# gunicorn は --workers 1 前提（キャッシュ／更新スレッドを 1 プロセスに集約するため）。
+_load_snapshot()
+threading.Thread(target=_snapshot_refresher, name="snapshot-refresher", daemon=True).start()
 
 
 if __name__ == "__main__":
