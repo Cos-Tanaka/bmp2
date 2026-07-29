@@ -177,6 +177,24 @@
   /* 工数確認テーブル */
   .pd { font-family: var(--mono); font-weight: 600; color: var(--green); text-align: right; }
   .sub { color: var(--text3); font-size: 11px; }
+
+  /* ── ガントチャート（サンプル描画用の簡略版） ── */
+  .gm-body { padding: 4px 0 6px; }
+  .gm-axis { display: flex; font-family: var(--mono); font-size: 10px; color: var(--text3); border-bottom: 1px solid var(--border2); padding: 0 16px 6px; margin-bottom: 6px; }
+  .gm-axis span { flex: 1; text-align: center; }
+  .gm-row { display: flex; align-items: center; gap: 10px; padding: 7px 16px; border-bottom: 1px solid var(--border); }
+  .gm-row.child { padding-left: 32px; }
+  .gm-label { width: 200px; flex-shrink: 0; font-size: 12px; display: flex; align-items: center; gap: 5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text); }
+  .gm-label .issue-key { margin-right: 0; }
+  .gm-track { flex: 1; position: relative; height: 14px; background-image: repeating-linear-gradient(90deg, var(--border) 0, var(--border) 1px, transparent 1px, transparent 20%); border-radius: 3px; }
+  .gm-bar { position: absolute; top: 1px; height: 12px; border-radius: 4px; border: 1px solid; overflow: hidden; }
+  .gm-bar-fill { position: absolute; inset: 0 auto 0 0; opacity: .85; }
+  .gm-bar-plan { position: absolute; top: -1px; bottom: -1px; width: 2px; background: var(--text); opacity: .7; }
+  .gm-bar.rolled { height: 8px; top: 3px; border-style: solid; }
+  .gm-bar.g { background: var(--bg4); border-color: var(--green); } .gm-bar.g .gm-bar-fill { background: var(--green); }
+  .gm-bar.y { background: var(--bg4); border-color: var(--yellow); } .gm-bar.y .gm-bar-fill { background: var(--yellow); }
+  .gm-bar.r { background: var(--bg4); border-color: var(--red); } .gm-bar.r .gm-bar-fill { background: var(--red); }
+  .gm-today { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--accent); opacity: .7; }
 </style>
 </head>
 <body>
@@ -199,7 +217,8 @@
       <li><a href="#s4">4. 子課題の詳細を見る・編集する</a></li>
       <li><a href="#s5">5. 実績工数を日々入力する</a></li>
       <li><a href="#s6">6. 実施工数確認画面の使い方</a></li>
-      <li><a href="#s7">7. リリースノート</a></li>
+      <li><a href="#s7">7. ガントチャートで期間を俯瞰する</a></li>
+      <li><a href="#s8">8. リリースノート</a></li>
     </ol>
   </nav>
 
@@ -210,7 +229,7 @@
     <ul class="notes">
       <li>データは Backlog から自動取得され、約60秒ごとに更新されます（手動更新も可）。</li>
       <li>画面は<b>案件（親課題）単位</b>で一覧表示され、各案件を開くと<b>子課題</b>が展開されます。</li>
-      <li>右上のボタンから<b>テーマ（ダーク/ライト）切替</b>、<b>実施工数確認</b>画面、<b>本ガイド</b>を開けます。</li>
+      <li>右上のボタンから<b>ガントチャート</b>、<b>実施工数確認</b>画面、<b>本ガイド</b>、<b>テーマ（ダーク/ライト）切替</b>を開けます。</li>
     </ul>
   </section>
 
@@ -229,6 +248,7 @@
           </div>
           <div class="header-right">
             <span class="pill"><span class="sync-dot"></span>最終同期: 10:32:14</span>
+            <span class="pill">📅 ガント</span>
             <span class="pill">📊 実施工数確認 <span class="marker">8</span></span>
             <span class="pill">☀ ライト</span>
             <span class="pill">↻ 更新</span>
@@ -352,7 +372,7 @@
   <!-- ── 4. 子課題の詳細・編集 ── -->
   <section id="s4">
     <h2 class="sec">4. 子課題の詳細を見る・編集する</h2>
-    <p>子課題の<b>案件名（タイトル）をクリック</b>すると、詳細レイヤーが画面内に開きます。ここでは <b>開始日・期限日・進捗率・チェック状態</b>を変更でき、<b>保存</b>すると Backlog に反映されます。</p>
+    <p>子課題の<b>案件名（タイトル）をクリック</b>すると、詳細レイヤーが画面内に開きます。ここでは <b>担当者・開始日・期限日・進捗率・チェック状態</b>を変更でき、<b>保存</b>すると Backlog に反映されます。また、この画面内で<b>実績工数を直接入力</b>することもできます（→ 5章と同じ入力欄）。</p>
 
     <div class="mock-modal">
       <div class="mm-head">
@@ -361,28 +381,45 @@
       </div>
       <div class="mm-body">
         <div class="mm-grid">
+          <div class="mm-field"><span class="mm-label">担当者 <span class="marker">1</span></span><span class="mm-value mm-input">佐藤 ▾</span></div>
           <div class="mm-field full"><span class="mm-label">親案件</span><span class="mm-value">V2A9-1652 recipe.csvの定期出力機能開発</span></div>
-          <div class="mm-field"><span class="mm-label">担当者</span><span class="mm-value">佐藤</span></div>
           <div class="mm-field"><span class="mm-label">予定工数</span><span class="mm-value mono">40 h</span></div>
           <div class="mm-field"><span class="mm-label">実績工数</span><span class="mm-value mono">36 h</span></div>
+          <div class="mm-field"><span class="mm-label">差分</span><span class="mm-value mono">-4 h</span></div>
           <div class="mm-field"><span class="mm-label">残工数</span><span class="mm-value mono">8 h</span></div>
-          <div class="mm-field"><span class="mm-label">開始日 <span class="marker">1</span></span><span class="mm-value mono mm-input">2026-06-05 📅</span></div>
-          <div class="mm-field"><span class="mm-label">期限日 <span class="marker">1</span></span><span class="mm-value mono mm-input">2026-06-15 📅</span></div>
-          <div class="mm-field"><span class="mm-label">進捗率 <span class="marker">2</span></span><span class="mm-value mm-input">90 ▾</span></div>
-          <div class="mm-field"><span class="mm-label">チェック状態 <span class="marker">2</span></span><span class="mm-value mm-input">30:レビュー済み ▾</span></div>
+          <div class="mm-field"><span class="mm-label">状態</span><span class="mm-value">処理中</span></div>
+          <div class="mm-field"><span class="mm-label">開始日 <span class="marker">2</span></span><span class="mm-value mono mm-input">2026-06-05 📅</span></div>
+          <div class="mm-field"><span class="mm-label">期限日 <span class="marker">2</span></span><span class="mm-value mono mm-input">2026-06-15 📅</span></div>
+          <div class="mm-field"><span class="mm-label">進捗率 <span class="marker">3</span></span><span class="mm-value mm-input">90 ▾</span></div>
+          <div class="mm-field"><span class="mm-label">チェック状態 <span class="marker">3</span></span><span class="mm-value mm-input">30:レビュー済み ▾</span></div>
         </div>
       </div>
       <div class="mm-foot">
         <span class="sub" style="margin-right:auto;color:var(--green)">保存しました</span>
-        <span class="mm-save">保存 <span class="marker">3</span></span>
+        <span class="mm-save">保存 <span class="marker">4</span></span>
         <span class="mm-link">Backlog で開く ↗</span>
+      </div>
+      <div class="mm-body" style="padding-top:16px">
+        <div class="w-hist" style="margin-top:0;border-top:none;padding-top:0">
+          <div class="w-hist-title">実績工数を入力 <span class="marker">5</span></div>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+            <div class="mm-field"><span class="mm-label">追加工数 (h)</span><span class="mm-value mm-input">1.5</span></div>
+            <div class="mm-field"><span class="mm-label">名前</span><span class="mm-value mm-input">佐藤</span></div>
+            <div class="mm-field"><span class="mm-label">日時</span><span class="mm-value mm-input mono">2026-06-14 18:05 📅</span></div>
+            <div style="display:flex;justify-content:flex-end"><span class="mm-save">追加</span></div>
+          </div>
+          <div class="w-hist-title">入力履歴</div>
+          <div class="w-hist-row"><span>佐藤</span><span class="w-hist-date">2026/06/14 18:05</span><span class="w-hist-hours">+1.5h</span><span class="w-hist-del">🗑</span></div>
+        </div>
       </div>
     </div>
 
     <ol class="legend">
-      <li><span class="marker">1</span><span><b>開始日 / 期限日</b>：日付ピッカーで変更します。「開始日 &gt; 期限日」の場合は保存時にエラーになります。</span></li>
-      <li><span class="marker">2</span><span><b>進捗率 / チェック状態</b>：プルダウンから選択します（Backlog の選択肢と同じ）。</span></li>
-      <li><span class="marker">3</span><span><b>保存</b>：変更した項目だけが Backlog に送信され、ダッシュボードも即座に更新されます。変更が無い場合は「変更がありません」と表示されます。</span></li>
+      <li><span class="marker">1</span><span><b>担当者</b>：プルダウンから変更します。先頭の「未割当」を選ぶと担当者なしに戻せます（対象は子課題のみ。親案件の担当者はこの画面からは変更できません）。</span></li>
+      <li><span class="marker">2</span><span><b>開始日 / 期限日</b>：日付ピッカーで変更します。「開始日 &gt; 期限日」の場合は保存時にエラーになります。</span></li>
+      <li><span class="marker">3</span><span><b>進捗率 / チェック状態</b>：プルダウンから選択します（Backlog の選択肢と同じ）。</span></li>
+      <li><span class="marker">4</span><span><b>保存</b>：変更した項目（担当者を含む）だけが Backlog に送信され、ダッシュボードも即座に更新されます。変更が無い場合は「変更がありません」と表示されます。ボタンは常にこの位置（実績工数の入力欄より上）に固定表示されるため、入力履歴が多い課題でもスクロールせずに押せます。</span></li>
+      <li><span class="marker">5</span><span><b>実績工数を入力</b>：5章で説明する実績工数の入力フォーム・入力履歴が、この詳細レイヤーの中にもそのまま組み込まれています。ここで工数を追加・削除すると、上部の実績工数・差分・残工数の表示がその場で更新されます（進捗率などその他の編集中の内容は失われません）。テーブルの実績(h)セルから開く独立したレイヤー（5章）と機能・見た目は同じです。</span></li>
     </ol>
     <div class="tip"><b>閉じる：</b>右上の ✕、背景クリック、または <code>Esc</code> キーで閉じられます。</div>
   </section>
@@ -390,7 +427,7 @@
   <!-- ── 5. 実績工数入力 ── -->
   <section id="s5">
     <h2 class="sec">5. 実績工数を日々入力する</h2>
-    <p>子課題の<b>実績工数（点線下線のセル）をクリック</b>すると、実績工数の入力レイヤーが開きます。日々の作業時間をここから加算していきます。</p>
+    <p>子課題の<b>実績工数（点線下線のセル）をクリック</b>すると、実績工数の入力レイヤーが開きます。日々の作業時間をここから加算していきます。同じ入力欄は、案件名クリックで開く詳細レイヤー（→ 4章）の中にも組み込まれているため、担当者や進捗率の変更とあわせて一度に入力することもできます。</p>
 
     <div class="mock-modal">
       <div class="mm-head">
@@ -463,10 +500,96 @@
     <div class="tip"><b>集計単位：</b>同じ親案件・同じ名前・同じ日であれば、複数の子課題への入力も1行にまとめて集計されます。</div>
   </section>
 
-  <!-- ── 7. リリースノート ── -->
+  <!-- ── 7. ガントチャート ── -->
   <section id="s7">
-    <h2 class="sec">7. リリースノート</h2>
+    <h2 class="sec">7. ガントチャートで期間を俯瞰する</h2>
+    <p>ヘッダーの <b>「📅 ガント」</b> から、案件・子課題の期間をタイムライン上のバーで俯瞰できる画面を開けます。一覧画面と同じデータ（同じ約60秒ごとの自動更新）を使う<b>閲覧専用</b>の画面です。</p>
+
+    <div class="screen">
+      <div class="screen-bar"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span><span class="screen-url">http://localhost:3031/gantt.html</span></div>
+      <div class="screen-body">
+        <div class="app-header">
+          <div style="display:flex;align-items:center">
+            <div class="logo">BPM<span> / ガントチャート</span></div>
+            <div class="project-badge">V2A9 プロジェクト</div>
+          </div>
+          <div class="header-right">
+            <span class="pill"><span class="sync-dot"></span>最終同期: 10:32:14</span>
+            <span class="pill">📋 一覧</span>
+            <span class="pill">☀ ライト</span>
+          </div>
+        </div>
+        <div class="filter-bar">
+          <span class="filter-label">粒度 <span class="marker">1</span></span>
+          <span class="chip">日</span><span class="chip active">週</span><span class="chip">月</span>
+          <span class="filter-sep"></span>
+          <span class="chip">📍 今日へ</span>
+          <span class="filter-sep"></span>
+          <span class="filter-label">表示</span>
+          <span class="chip active">日付なしを隠す (447) <span class="marker">2</span></span>
+          <span class="chip">▼ 全て開く</span><span class="chip">▶ 全て閉じる</span>
+        </div>
+        <div class="gm-body">
+          <div class="gm-axis"><span></span><span>6/22</span><span>6/29</span><span>7/6</span><span>7/13</span><span>7/20</span></div>
+          <div class="gm-row">
+            <div class="gm-label">🟢 <span class="issue-key">V2A9-1652</span><span class="issue-title">recipe.csvの定期出力機能開発</span></div>
+            <div class="gm-track">
+              <div class="gm-today" style="left:62%"></div>
+              <div class="gm-bar rolled g" style="left:20%;width:55%"><div class="gm-bar-fill" style="width:60%"></div></div>
+              <span class="marker" style="position:absolute;left:20%;top:-16px">3</span>
+            </div>
+          </div>
+          <div class="gm-row child">
+            <div class="gm-label"><span class="issue-key">V2A9-1706</span><span class="issue-title-child">出力バッチの実装</span></div>
+            <div class="gm-track">
+              <div class="gm-today" style="left:62%"></div>
+              <div class="gm-bar g" style="left:25%;width:30%"><div class="gm-bar-fill" style="width:90%"></div><div class="gm-bar-plan" style="left:70%"></div></div>
+              <span class="marker" style="position:absolute;left:25%;top:-16px">4</span>
+            </div>
+          </div>
+          <div class="gm-row child">
+            <div class="gm-label"><span class="issue-key">V2A9-1707</span><span class="issue-title-child">出力フォーマット定義</span></div>
+            <div class="gm-track">
+              <div class="gm-today" style="left:62%"></div>
+              <div class="gm-bar r" style="left:35%;width:22%"><div class="gm-bar-fill" style="width:100%"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="marker">1</span><span><b>粒度（日／週／月）</b>：時間軸の目盛りの細かさを切り替えます。「📍 今日へ」で今日の位置まで自動スクロールします。</span></li>
+      <li><span class="marker">2</span><span><b>日付なしを隠す</b>：開始日・期限日のどちらかが未設定でバーを描けない案件・課題を非表示にします（既定でON）。チップの数字は非表示中の件数です。オフにすると全件表示されますが、バーの無い行が増えます。</span></li>
+      <li><span class="marker">3</span><span><b>集約バー（細いバー）</b>：親案件自身に開始日・期限日が設定されていない場合、子課題の中の最も早い開始日〜最も遅い期限日から自動計算した期間を細いバーで表示します（Backlog では親案件に日付を入れない運用が多いため）。</span></li>
+      <li><span class="marker">4</span><span><b>進捗の塗り／予定ライン</b>：バー内の塗りが進捗率（子課題は進捗率フィールド、無ければ実績/予定工数の比率）。縦の白線は「今日時点で本来あるべき進捗（期間に対する経過割合）」の位置です。塗りが白線より左なら遅れ気味、右なら順調です。</span></li>
+    </ol>
+    <ul class="notes">
+      <li><b>色分け</b>：バーの色は健全性と同じ基準です（🟢正常／🟡注意／🔴危険）。</li>
+      <li><b>今日ライン</b>：縦の青い線が今日の日付です。</li>
+      <li><b>階層表示</b>：左側の <b>▶</b> で子課題の開閉、「全て開く／全て閉じる」で一括操作できます（一覧画面と同じ）。</li>
+      <li><b>フィルター</b>：健全性・状態・担当者・ステータスは一覧画面と共通で、設定内容もブラウザに保存され両画面で共有されます。</li>
+      <li><b>バーやタイトルのクリック</b>：該当の課題を Backlog の新しいタブで開きます。バーにマウスを乗せると、期間・工数・進捗などの詳細がツールチップで表示されます。</li>
+      <li><b>編集不可</b>：ガント画面はあくまで俯瞰用の閲覧画面です。日程や進捗の変更は、一覧画面の詳細レイヤー（→ 4章）から行ってください。</li>
+    </ul>
+  </section>
+
+  <!-- ── 8. リリースノート ── -->
+  <section id="s8">
+    <h2 class="sec">8. リリースノート</h2>
     <p class="lead">機能追加・変更の履歴です。新しいものが上に並びます。</p>
+
+    <h3>2026-07-30</h3>
+    <ul class="notes">
+      <li><b>ガントチャート画面を追加しました</b>（→ <a href="#s7" style="color:var(--accent)">7章</a>）。<br>
+        案件・子課題の期間をタイムライン上のバーで俯瞰できる新しい画面です。日/週/月の粒度切替、健全性による色分け、進捗の塗りと予定進捗ライン、親案件に日付が無い場合の集約バー表示に対応しています。</li>
+      <li><b>子課題の詳細レイヤーから担当者を変更できるようになりました</b>（→ <a href="#s4" style="color:var(--accent)">4章</a>）。<br>
+        担当者をプルダウンで選び直せます。「未割当」に戻すことも可能です（対象は子課題のみ）。</li>
+      <li><b>子課題の詳細レイヤーに実績工数の入力欄を統合しました</b>（→ <a href="#s4" style="color:var(--accent)">4章</a>）。<br>
+        実績工数の入力フォームと入力履歴を詳細レイヤーの中に組み込み、開いたまま日々の更新を完結できるようにしました。テーブルの実績(h)セルから開く独立したレイヤー（→ <a href="#s5" style="color:var(--accent)">5章</a>）も引き続き利用できます。</li>
+      <li><b>詳細レイヤーの「保存」ボタンの位置を変更しました</b>（→ <a href="#s4" style="color:var(--accent)">4章</a>）。<br>
+        実績工数の入力履歴が増えるとボタンが画面の下に押し流されていたため、常に見える編集フォーム直下の位置に固定しました。</li>
+    </ul>
 
     <h3>2026-07-07</h3>
     <ul class="notes">
