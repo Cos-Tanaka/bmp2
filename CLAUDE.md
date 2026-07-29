@@ -75,6 +75,17 @@ Single HTML file, no build step, no framework. All JS is inline.
 - **`isParentDone`**: returns true when every child has `statusId === 3` (Backlog's built-in "完了" status ID).
 - **Progress bars**: parents show two bars (plan % based on date range, actual % based on hours); children show one bar (custom progress field if present, else hours ratio).
 
+### Gantt (`frontend/html/gantt.html`)
+
+Read-only Gantt view of the same `/api/issues` payload — no backend involvement, no extra endpoint. Reached from the 「📅 ガント」 header button on `index.html`.
+
+- **Layout**: one horizontally scrolling container. Each row is a flex pair of a `position: sticky; left: 0` left pane (`LEFT_W` = 340 px) and a track. The time-axis header is `position: sticky; top: 0`. Grid columns, weekend shading and the today line live in a single absolutely positioned `.gantt-bg` layer behind all rows, not per row.
+- **Time axis** (`buildAxis`): granularity 日 / 週 / 月 switches column width and unit; the range spans all displayed items (padded, snapped to unit boundaries) and always includes today. `xOf(date)` maps a date to px — month granularity pro-rates within the month, so column width alone is not enough.
+- **Bar period** (`resolveRange`): a child needs both `start` and `due`. A parent falls back to min(child starts) → max(child dues) when its own dates are incomplete, rendered as a thinner "rolled" summary bar. This matters — in the live project only ~5 of 108 parents carry their own dates.
+- **`hideUndated`** (default on, `bpm2-gantt-hide-undated`): hides rows whose period cannot be resolved. Without it the chart is mostly empty rows.
+- **Bar colour** is health; parents use the backend's `health`, children are judged client-side by `childHealth` (same thresholds as the backend's `calc_health`). Fill = progress, thin vertical line = date-based expected progress.
+- **Shared state**: the `filter` object and `bpm2-filter` localStorage key are shared with `index.html`, including the `childSort` key this page does not use — it is kept in the object so a round-trip through this page does not drop index.html's setting. Granularity and the undated toggle use their own keys.
+
 ### nginx (`frontend/nginx.conf`)
 
 Reverse-proxies `/api/` to `http://backend:5000`. Everything else is served from the static root with an SPA fallback. `/health` returns a plain 200 for infra checks.
