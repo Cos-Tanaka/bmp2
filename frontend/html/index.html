@@ -353,8 +353,14 @@
     </div>
     <div class="modal-body">
       <div class="m-grid" id="mGrid"></div>
-
-      <div class="w-history">
+    </div>
+    <div class="modal-foot">
+      <span class="m-msg" id="mMsg"></span>
+      <button class="m-save" id="mSave" onclick="saveChildEdits()">保存</button>
+      <a class="m-link" id="mLink" href="#" target="_blank">Backlog で開く ↗</a>
+    </div>
+    <div class="modal-body" style="padding-top:16px">
+      <div class="w-history" style="margin-top:0;border-top:none;padding-top:0">
         <div class="w-history-title">実績工数を入力</div>
         <div class="w-form" style="margin-bottom:16px">
           <div class="m-field">
@@ -377,11 +383,6 @@
         <div class="w-history-title">入力履歴</div>
         <div id="dwHistory"></div>
       </div>
-    </div>
-    <div class="modal-foot">
-      <span class="m-msg" id="mMsg"></span>
-      <button class="m-save" id="mSave" onclick="saveChildEdits()">保存</button>
-      <a class="m-link" id="mLink" href="#" target="_blank">Backlog で開く ↗</a>
     </div>
   </div>
 </div>
