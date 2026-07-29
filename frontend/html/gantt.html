@@ -207,11 +207,12 @@
     background: var(--bg4); border: 1px solid var(--border2); border-radius: 10px;
     padding: 0 6px; font-size: 10px; color: var(--text3); font-family: var(--mono); flex: none;
   }
-  .avatar {
-    width: 20px; height: 20px; border-radius: 50%; font-size: 10px; font-weight: 700;
-    display: inline-flex; align-items: center; justify-content: center; flex: none;
-    margin-left: auto; background: rgba(56,139,253,.2); color: var(--accent);
+  .assignee-tag {
+    flex: none; margin-left: auto; max-width: 72px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+    font-size: 11px; color: var(--text2); text-align: right;
   }
+  .grow.is-child .assignee-tag { color: var(--text3); }
 
   /* ツールチップ */
   .gtip {
@@ -685,7 +686,7 @@ function renderGantt() {
         <span class="issue-title" title="${escAttr(parent.title)}">${escHtml(parent.title)}</span>
         <span class="count-badge">${badge}</span>
         ${pBar ? '' : '<span class="no-date">日付未設定</span>'}
-        <span class="avatar" title="${escAttr(parent.assignee)}">${escHtml((parent.assignee || '?')[0])}</span>
+        <span class="assignee-tag" title="${escAttr(parent.assignee || '未割当')}">${escHtml(parent.assignee || '未割当')}</span>
       </div>
       <div class="gtrack" style="width:${axis.width}px">${pBar}</div>
     </div>`;
@@ -699,7 +700,7 @@ function renderGantt() {
           <a href="${escAttr(c.url)}" target="_blank" rel="noopener" class="issue-key">${escHtml(c.id)}</a>
           <span class="issue-title" title="${escAttr(c.title)}">${escHtml(c.title)}</span>
           ${cBar ? '' : '<span class="no-date">日付未設定</span>'}
-          <span class="avatar" title="${escAttr(c.assignee)}">${escHtml((c.assignee || '?')[0])}</span>
+          <span class="assignee-tag" title="${escAttr(c.assignee || '未割当')}">${escHtml(c.assignee || '未割当')}</span>
         </div>
         <div class="gtrack" style="width:${axis.width}px">${cBar}</div>
       </div>`;
