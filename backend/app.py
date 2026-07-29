@@ -240,6 +240,13 @@ def get_custom_fields() -> dict:
     return {f["name"]: f["id"] for f in fields}
 
 
+@cached("project_users", ttl=3600)
+def get_project_users() -> list:
+    """プロジェクトメンバー一覧を返す（担当者プルダウン用）"""
+    users = backlog_get(f"/projects/{PROJECT}/users")
+    return [{"id": u["id"], "name": u["name"]} for u in users]
+
+
 @cached("field_options", ttl=3600)
 def get_field_options() -> dict:
     """
@@ -349,6 +356,7 @@ def format_issue(issue: dict, progress_field_id: int | None, check_status_field_
         "id":          issue["issueKey"],
         "title":       issue["summary"],
         "assignee":    (issue.get("assignee") or {}).get("name", "未割当"),
+        "assigneeId":  (issue.get("assignee") or {}).get("id"),
         "start":       (issue.get("startDate") or "")[:10],
         "due":         (issue.get("dueDate")   or "")[:10],
         "plannedH":    planned_h,
@@ -526,20 +534,36 @@ def api_field_options():
         abort(500, description=str(e))
 
 
+@app.route("/api/project-users")
+def api_project_users():
+    """担当者プルダウン用のプロジェクトメンバー一覧を返す。"""
+    try:
+        return jsonify(get_project_users())
+    except requests.HTTPError as e:
+        log.error("Backlog API error: %s", e)
+        abort(502, description=f"Backlog API error: {e.response.status_code}")
+    except Exception as e:
+        log.exception("Unexpected error")
+        abort(500, description=str(e))
+
+
 @app.route("/api/issue/<key>", methods=["PATCH"])
 def api_update_issue(key: str):
     """
-    子課題の進捗率・チェック状態・開始日・期限日を更新する。
+    子課題の担当者・進捗率・チェック状態・開始日・期限日を更新する。
     リクエストボディ(JSON): {
-      "progressItemId": int?, "checkStatusItemId": int?,
+      "assigneeId": int|""?, "progressItemId": int?, "checkStatusItemId": int?,
       "startDate": "YYYY-MM-DD"|""?, "dueDate": "YYYY-MM-DD"|""?
     }
     単一選択リストは項目ID(customField_<id>)、日付は標準フィールドで更新する。
+    assigneeId は空文字で「未割当」にクリアできる（Backlog 側の挙動を実課題で確認済み）。
     """
     body = request.get_json(silent=True) or {}
     options = get_field_options()
 
     data: dict = {}
+    if "assigneeId" in body:
+        data["assigneeId"] = body["assigneeId"] or ""
     if body.get("progressItemId") is not None and "progress" in options:
         data[f"customField_{options['progress']['fieldId']}"] = body["progressItemId"]
     if body.get("checkStatusItemId") is not None and "checkStatus" in options:

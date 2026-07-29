@@ -64,6 +64,10 @@ Single-file Flask app with three layers:
    - **Parent filtering**: issues where `parentIssueId is None`, issue type name is `"00.案件"`, and status is not `"完了"`.
    - **Health logic**: `red` if past due or actual > planned × 1.2; `yellow` if due within 3 days or actual > planned; otherwise `green`. Calculated from the *children's* hours, not the parent's own hours.
    - **Progress extraction** (`extract_custom_value`): the custom field value may be a plain number, a string with a leading number, a `dict` with a `name` key, or a list — all cases are normalised to an integer percentage.
+   - `format_issue` includes both `assignee` (name) and `assigneeId` (Backlog user id, `None` if unassigned) — the id is what the frontend's assignee `<select>` matches against, since names can collide.
+
+- **`GET /api/project-users`** (`get_project_users`, cached 1h): `[{"id", "name"}, ...]` from `/projects/:key/users`, used to populate the assignee dropdown in the child detail modal.
+- **`PATCH /api/issue/<key>`** also accepts `assigneeId` (int, or `""` to clear to unassigned). Confirmed by live testing against a real issue that Backlog accepts an empty string for `assigneeId` to unassign — this is undocumented in the official API reference. Only child issues get an assignee editor in the UI; parents don't.
 
 ### Frontend (`frontend/html/index.html`)
 
@@ -74,6 +78,9 @@ Single HTML file, no build step, no framework. All JS is inline.
 - **Custom status filter**: matches the numeric prefix of `customStatus` — 0–19 → `見積`, 20–29 → `設計`, 30–39 → `正式`, 40–49 → `開発`, 59–60 → `テスト`, 69 → `本番`.
 - **`isParentDone`**: returns true when every child has `statusId === 3` (Backlog's built-in "完了" status ID).
 - **Progress bars**: parents show two bars (plan % based on date range, actual % based on hours); children show one bar (custom progress field if present, else hours ratio).
+- **Child detail modal** (`openChildModal`): assignee is an editable `<select>` (falls back to read-only text if `/api/project-users` failed to load) alongside the existing start/due/progress/check-status editors, saved together by `saveChildEdits()`.
+- **Worklog UI is shared between two mount points** via a `prefix` argument (`'w'` for the standalone worklog modal opened from the table's actual-hours cell, `'dw'` for the panel embedded in the child detail modal): `mountWorklogPanel`, `loadWorklogHistory`, `addWorklog`, `deleteWorklog`, `setWorklogMsg` all take `prefix` and operate on elements named `${prefix}Hours`, `${prefix}Name`, `${prefix}Date`, `${prefix}Msg`, `${prefix}Add`, `${prefix}History`. `worklogTargetId(prefix)` resolves which child issue is being edited (`modalChildId` for `'dw'`, `worklogChildId` for `'w'`) — the two panels can be open independently without interfering.
+- After adding/deleting a worklog entry from the `'dw'` panel, `refreshChildModalHours()` patches only the 予定/実績/差分/残工数 spans in the open detail modal (by id: `mPlannedH`/`mActualH`/`mDiffH`/`mRemainingH`) rather than re-rendering the whole modal — a full re-render would wipe out an in-progress progress/date edit the user hasn't saved yet.
 
 ### Gantt (`frontend/html/gantt.html`)
 
