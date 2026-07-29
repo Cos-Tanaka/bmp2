@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BPM / ガントチャート</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #1c2128; --bg4: #21262d;
+    --border: #30363d; --border2: #3d444d;
+    --text: #e6edf3; --text2: #8d96a0; --text3: #6e7681;
+    --accent: #388bfd; --accent2: #1f6feb;
+    --green: #3fb950; --yellow: #d29922; --red: #f85149; --purple: #a371f7;
+    --font: 'Noto Sans JP', sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+    color-scheme: dark;
+  }
+  [data-theme="light"] {
+    --bg: #ffffff; --bg2: #f6f8fa; --bg3: #eaeef2; --bg4: #f1f3f5;
+    --border: #d0d7de; --border2: #afb8c1;
+    --text: #1f2328; --text2: #57606a; --text3: #8c959f;
+    --accent: #0969da; --accent2: #0550ae;
+    --green: #1a7f37; --yellow: #9a6700; --red: #cf222e; --purple: #8250df;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* 画面全体を縦フレックスにして、ガント本体が残りの高さをすべて使うようにする */
+  body {
+    background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px;
+    height: 100vh; display: flex; flex-direction: column;
+  }
+
+  /* Header */
+  .header {
+    background: var(--bg2); border-bottom: 1px solid var(--border); flex: none;
+    padding: 12px 24px; display: flex; align-items: center; justify-content: space-between;
+  }
+  .logo { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--accent); letter-spacing: .05em; }
+  .logo span { color: var(--text2); font-weight: 400; }
+  .project-badge {
+    background: var(--bg4); border: 1px solid var(--border2);
+    border-radius: 6px; padding: 3px 10px; font-size: 12px; color: var(--text2); margin-left: 14px;
+  }
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  .sync-info { font-family: var(--mono); font-size: 11px; color: var(--text3); }
+  .sync-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--green);
+    display: inline-block; margin-right: 6px; box-shadow: 0 0 6px var(--green);
+  }
+  .sync-dot.error { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .sync-dot.loading { background: var(--yellow); animation: blink 1s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .btn-refresh, .btn-theme {
+    background: var(--bg4); border: 1px solid var(--border2); border-radius: 6px;
+    color: var(--text2); padding: 4px 12px; font-size: 12px; cursor: pointer;
+    font-family: var(--font); transition: .15s;
+  }
+  .btn-refresh:hover, .btn-theme:hover { border-color: var(--accent); color: var(--text); }
+
+  /* Filter */
+  .filter-bar {
+    padding: 10px 24px; display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid var(--border); flex-wrap: wrap; flex: none;
+  }
+  .filter-label { font-size: 11px; color: var(--text3); }
+  .chip {
+    background: var(--bg4); border: 1px solid var(--border2); border-radius: 20px;
+    padding: 3px 12px; font-size: 11px; cursor: pointer; color: var(--text2); transition: .15s;
+  }
+  .chip:hover { border-color: var(--accent); color: var(--text); }
+  .chip.active { background: var(--accent2); border-color: var(--accent); color: #fff; }
+  .filter-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+  .select-filter {
+    background: var(--bg4); border: 1px solid var(--border2); border-radius: 6px;
+    color: var(--text2); padding: 3px 8px; font-size: 11px; cursor: pointer;
+    font-family: var(--font); outline: none; transition: .15s;
+  }
+  .select-filter:hover { border-color: var(--accent); color: var(--text); }
+
+  /* 凡例 */
+  .legend { margin-left: auto; display: flex; align-items: center; gap: 14px; font-size: 11px; color: var(--text3); }
+  .legend-item { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .legend-swatch {
+    width: 22px; height: 10px; border-radius: 3px; background: var(--bg4);
+    border: 1px solid var(--barc, var(--border2)); position: relative; overflow: hidden;
+  }
+  .legend-swatch i { position: absolute; inset: 0 auto 0 0; width: 55%; background: var(--barc); }
+  .legend-swatch.plan i { width: 2px; left: 60%; background: var(--text); }
+  .legend-swatch.rolled { height: 5px; border-color: var(--text3); }
+  .legend-swatch.rolled i { background: var(--text3); }
+
+  /* ガント本体 */
+  .gantt-scroll {
+    position: relative; overflow: auto;
+    flex: 1; min-height: 0; border-top: 1px solid var(--border2);
+  }
+  .gantt-canvas { position: relative; }
+
+  .grow, .gantt-head { display: flex; align-items: stretch; }
+  .gantt-head {
+    position: sticky; top: 0; z-index: 3;
+    height: 48px; border-bottom: 1px solid var(--border2);   /* 上段23 + 下段24 + 境界1 */
+  }
+  .gantt-rows { position: relative; }
+  .grow { position: relative; z-index: 1; height: 34px; border-bottom: 1px solid var(--border); }
+  .grow.is-child { height: 30px; }
+  .grow:hover .gtrack { background: rgba(127,127,127,.09); }
+  .grow:hover .gcell-left { background: var(--bg3); }
+
+  .gcell-left {
+    position: sticky; left: 0; flex: none; z-index: 2;
+    display: flex; align-items: center; gap: 6px;
+    padding: 0 10px 0 8px; overflow: hidden;
+    background: var(--bg2); border-right: 1px solid var(--border2);
+  }
+  .grow.is-child .gcell-left { background: var(--bg); padding-left: 26px; }
+  .gantt-head .gcell-left {
+    background: var(--bg2); font-size: 11px; color: var(--text3);
+    text-transform: uppercase; letter-spacing: .05em; white-space: nowrap;
+  }
+  .head-count {
+    margin-left: auto; text-transform: none; letter-spacing: 0;
+    font-family: var(--mono); overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .gtrack { position: relative; flex: none; }
+
+  /* 背景レイヤー（グリッド・週末・今日） */
+  .gantt-bg { position: absolute; top: 0; bottom: 0; z-index: 0; pointer-events: none; }
+  .gcol { position: absolute; top: 0; bottom: 0; border-right: 1px solid var(--border); opacity: .55; }
+  .gcol.weekend { background: rgba(127,127,127,.07); }
+  .gcol.month-start { border-right-color: var(--border2); opacity: 1; }
+  .gtoday { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); opacity: .65; }
+
+  /* 時間軸ヘッダー */
+  .gt-groups, .gt-cols { position: absolute; left: 0; right: 0; }
+  .gt-groups { top: 0; height: 23px; }
+  .gt-cols { top: 23px; height: 24px; }
+  .gt-group {
+    position: absolute; top: 0; height: 23px; display: flex; align-items: center;
+    font-size: 11px; color: var(--text2);
+    border-right: 1px solid var(--border2); border-bottom: 1px solid var(--border);
+    background: var(--bg2); white-space: nowrap;
+  }
+  /* 年月ラベルは左ペインの右端に貼り付いて動く（横スクロールしても現在の年月が読める）。
+     LEFT_W(340) + 余白7px = 347px。overflow:hidden を付けると sticky が効かなくなるため付けない。 */
+  .gt-group > span { position: sticky; left: 347px; padding-left: 7px; }
+  .gt-col {
+    position: absolute; top: 0; height: 24px; display: flex;
+    align-items: center; justify-content: center; gap: 2px;
+    font-family: var(--mono); font-size: 10px; color: var(--text3);
+    border-right: 1px solid var(--border); background: var(--bg2); overflow: hidden;
+  }
+  .gt-col.weekend { color: var(--text2); background: var(--bg3); }
+  .gt-col.today { color: #fff; background: var(--accent2); }
+  .gt-col small { font-size: 9px; opacity: .75; }
+  .gt-today-flag {
+    position: absolute; top: 0; height: 23px; display: flex; align-items: center;
+    transform: translateX(-50%); z-index: 2;
+  }
+  .gt-today-flag span {
+    background: var(--accent); color: #fff; font-size: 9px; font-family: var(--mono);
+    border-radius: 3px; padding: 1px 5px; white-space: nowrap;
+  }
+
+  /* バー */
+  .gbar {
+    position: absolute; top: 50%; transform: translateY(-50%); height: 15px;
+    background: var(--bg4); border: 1px solid var(--barc); border-radius: 4px;
+    cursor: pointer; overflow: hidden; transition: filter .15s;
+  }
+  .grow.is-child .gbar { height: 12px; }
+  .gbar:hover { filter: brightness(1.25); }
+  .gbar-fill { position: absolute; inset: 0 auto 0 0; background: var(--barc); opacity: .85; }
+  .gbar-plan { position: absolute; top: -1px; bottom: -1px; width: 2px; background: var(--text); opacity: .7; }
+  .gbar-pct {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 9px; font-weight: 600; color: var(--text);
+    text-shadow: 0 0 3px var(--bg), 0 0 3px var(--bg);
+  }
+  .gbar.invalid { border-style: dashed; border-color: var(--red); }
+  /* 子課題から集約したサマリーバー（親自身に日付が無い場合）は細く描いて区別する */
+  .gbar.rolled { height: 9px; border-radius: 2px; }
+  .grow.is-child .gbar.rolled { height: 8px; }
+  .gbar.rolled .gbar-pct { font-size: 8px; }
+
+  .no-date {
+    font-size: 10px; color: var(--text3); border: 1px dashed var(--border2);
+    border-radius: 4px; padding: 1px 6px; white-space: nowrap;
+  }
+
+  /* 左ペイン中身 */
+  .toggle-btn {
+    background: none; border: none; color: var(--text2); cursor: pointer;
+    font-size: 12px; width: 16px; flex: none; text-align: center; transition: transform .2s;
+    line-height: 1; padding: 0;
+  }
+  .toggle-btn.open { transform: rotate(90deg); }
+  .toggle-spacer { width: 16px; flex: none; }
+  .health-icon { font-size: 11px; flex: none; }
+  .issue-key { font-family: var(--mono); font-size: 11px; color: var(--accent); white-space: nowrap; flex: none; text-decoration: none; }
+  .issue-key:hover { text-decoration: underline; }
+  .issue-title { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .grow.is-child .issue-title { color: var(--text2); font-weight: 400; font-size: 12px; }
+  .count-badge {
+    background: var(--bg4); border: 1px solid var(--border2); border-radius: 10px;
+    padding: 0 6px; font-size: 10px; color: var(--text3); font-family: var(--mono); flex: none;
+  }
+  .avatar {
+    width: 20px; height: 20px; border-radius: 50%; font-size: 10px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center; flex: none;
+    margin-left: auto; background: rgba(56,139,253,.2); color: var(--accent);
+  }
+
+  /* ツールチップ */
+  .gtip {
+    position: fixed; z-index: 500; display: none; max-width: 320px;
+    background: var(--bg2); border: 1px solid var(--border2); border-radius: 8px;
+    padding: 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.4); pointer-events: none;
+  }
+  .gtip.open { display: block; }
+  .gtip-key { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+  .gtip-title { font-size: 13px; font-weight: 600; margin: 2px 0 8px; line-height: 1.35; }
+  .gtip-grid { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 12px; }
+  .gtip-grid dt { color: var(--text3); white-space: nowrap; }
+  .gtip-grid dd { font-family: var(--mono); color: var(--text); }
+
+  /* 状態表示 */
+  .state-overlay { padding: 60px; text-align: center; color: var(--text3); }
+  .state-overlay .icon { font-size: 32px; margin-bottom: 12px; }
+  .spinner {
+    width: 28px; height: 28px; border: 3px solid var(--border2);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin .8s linear infinite; margin: 0 auto 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div style="display:flex;align-items:center">
+    <div class="logo">BPM<span> / ガントチャート</span></div>
+    <div class="project-badge" id="projectBadge">読込中...</div>
+  </div>
+  <div class="header-right">
+    <span class="sync-info"><span class="sync-dot loading" id="syncDot"></span><span id="syncText">取得中...</span></span>
+    <a class="btn-refresh" href="/index.html" style="text-decoration:none">📋 一覧</a>
+    <a class="btn-refresh" href="/guide.html" target="_blank" rel="noopener" style="text-decoration:none">❓ 使い方</a>
+    <button class="btn-theme" id="btnTheme" onclick="toggleTheme()">☀ ライト</button>
+    <button class="btn-refresh" onclick="fetchData(true)">↻ 更新</button>
+  </div>
+</header>
+
+<div class="filter-bar">
+  <span class="filter-label">健全性</span>
+  <button class="chip" data-f="health" data-v="all">すべて</button>
+  <button class="chip" data-f="health" data-v="green">🟢 正常</button>
+  <button class="chip" data-f="health" data-v="yellow">🟡 注意</button>
+  <button class="chip" data-f="health" data-v="red">🔴 危険</button>
+  <div class="filter-sep"></div>
+  <span class="filter-label">状態</span>
+  <button class="chip" data-f="status" data-v="wip">対応中</button>
+  <button class="chip" data-f="status" data-v="done">完了</button>
+  <div class="filter-sep"></div>
+  <span class="filter-label">担当者</span>
+  <select class="select-filter" id="assigneeFilter" onchange="setAssigneeFilter(this.value)">
+    <option value="all">すべて</option>
+  </select>
+  <div class="filter-sep"></div>
+  <span class="filter-label">ステータス</span>
+  <button class="chip" data-f="customStatus" data-v="all">すべて</button>
+  <button class="chip" data-f="customStatus" data-v="見積">概算見積</button>
+  <button class="chip" data-f="customStatus" data-v="設計">基本設計</button>
+  <button class="chip" data-f="customStatus" data-v="正式">正式見積</button>
+  <button class="chip" data-f="customStatus" data-v="開発">開発中</button>
+  <button class="chip" data-f="customStatus" data-v="テスト">テストリリース済み</button>
+  <button class="chip" data-f="customStatus" data-v="本番">本番リリース済み</button>
+</div>
+
+<div class="filter-bar" style="border-top:none">
+  <span class="filter-label">粒度</span>
+  <button class="chip" data-scale="day">日</button>
+  <button class="chip" data-scale="week">週</button>
+  <button class="chip" data-scale="month">月</button>
+  <div class="filter-sep"></div>
+  <button class="chip" onclick="scrollToToday()">📍 今日へ</button>
+  <div class="filter-sep"></div>
+  <span class="filter-label">表示</span>
+  <button class="chip" id="chipHideUndated" onclick="toggleHideUndated(this)">日付なしを隠す</button>
+  <button class="chip" onclick="setAllExpanded(true)">▼ 全て開く</button>
+  <button class="chip" onclick="setAllExpanded(false)">▶ 全て閉じる</button>
+
+  <div class="legend">
+    <span class="legend-item" style="--barc:var(--green)"><span class="legend-swatch"><i></i></span>正常</span>
+    <span class="legend-item" style="--barc:var(--yellow)"><span class="legend-swatch"><i></i></span>注意</span>
+    <span class="legend-item" style="--barc:var(--red)"><span class="legend-swatch"><i></i></span>危険</span>
+    <span class="legend-item"><span class="legend-swatch plan"><i></i></span>塗り=進捗 / 縦線=予定進捗</span>
+    <span class="legend-item"><span class="legend-swatch rolled"><i></i></span>細バー=子課題から集約</span>
+  </div>
+</div>
+
+<div class="gantt-scroll" id="ganttScroll">
+  <div id="ganttState" class="state-overlay"><div class="spinner"></div>読込中...</div>
+  <div class="gantt-canvas" id="ganttCanvas" style="display:none">
+    <div class="gantt-head" id="ganttHead"></div>
+    <div class="gantt-rows" id="ganttRows"></div>
+  </div>
+</div>
+
+<div class="gtip" id="gtip"></div>
+
+<script>
+// ── 状態 ──────────────────────────────────────────
+let allData = [];
+let expanded = new Set();          // 展開中の親案件 ID
+let axis = null;                   // 現在の時間軸モデル
+let filter = { health: 'all', status: null, assignee: 'all', customStatus: 'all', childSort: 'assignee-date' };
+let scale = 'week';
+let hideUndated = true;            // 日付が引けない行を隠す（Backlog 側で未設定の課題が多いため既定 ON）
+let didInitialScroll = false;
+
+const POLL_MS    = 60000;          // 60秒ポーリング（index.html と同じ）
+const FILTER_KEY = 'bpm2-filter';  // index.html とフィルタ状態を共有
+const SCALE_KEY  = 'bpm2-gantt-scale';
+const HIDE_KEY   = 'bpm2-gantt-hide-undated';
+const LEFT_W     = 340;            // 左ペイン幅(px)
+const SCALES = {
+  day:   { colW: 32, padUnits: 5 },
+  week:  { colW: 52, padUnits: 2 },
+  month: { colW: 64, padUnits: 1 },
+};
+
+// ── フィルタの保存・復元（index.html と共通仕様）──
+function saveFilter() {
+  try { localStorage.setItem(FILTER_KEY, JSON.stringify(filter)); } catch (e) {}
+}
+
+function loadFilter() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(FILTER_KEY) || '{}');
+    for (const k of Object.keys(filter)) {
+      if (saved[k] !== undefined) filter[k] = saved[k];
+    }
+  } catch (e) {}
+  const s = localStorage.getItem(SCALE_KEY);
+  if (s && SCALES[s]) scale = s;
+  const h = localStorage.getItem(HIDE_KEY);
+  if (h !== null) hideUndated = h === '1';
+}
+
+// 保存されたフィルタ・粒度を UI コントロールへ反映
+function applyFilterUI() {
+  document.querySelectorAll('.chip[data-f]').forEach(c => {
+    c.classList.toggle('active', filter[c.dataset.f] === c.dataset.v);
+  });
+  document.querySelectorAll('.chip[data-scale]').forEach(c => {
+    c.classList.toggle('active', c.dataset.scale === scale);
+  });
+  document.getElementById('chipHideUndated').classList.toggle('active', hideUndated);
+}
+
+// ── API 取得 ──────────────────────────────────────
+async function fetchData(force = false) {
+  setSyncState('loading');
+  try {
+    const url = '/api/issues' + (force ? '?t=' + Date.now() : '');
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    allData = await res.json();
+    document.getElementById('projectBadge').textContent =
+      allData.length ? allData[0].id.split('-')[0] + ' プロジェクト' : '';
+    updateAssigneeFilter();
+    renderGantt();
+    setSyncState('ok');
+  } catch (e) {
+    setSyncState('error', e.message);
+    if (!allData.length) showState('⚠', 'データの取得に失敗しました', e.message);
+  }
+}
+
+function setSyncState(state, msg = '') {
+  const dot  = document.getElementById('syncDot');
+  const text = document.getElementById('syncText');
+  dot.className = 'sync-dot';
+  if (state === 'loading') {
+    dot.classList.add('loading');
+    text.textContent = '取得中...';
+  } else if (state === 'ok') {
+    text.textContent = '最終同期: ' + new Date().toLocaleTimeString('ja-JP');
+  } else {
+    dot.classList.add('error');
+    text.textContent = 'エラー: ' + msg;
+  }
+}
+
+function showState(icon, msg, sub = '') {
+  document.getElementById('ganttCanvas').style.display = 'none';
+  const el = document.getElementById('ganttState');
+  el.style.display = '';
+  el.innerHTML = `<div class="icon">${icon}</div><div>${escHtml(msg)}</div>` +
+    (sub ? `<div style="font-size:12px;margin-top:6px">${escHtml(sub)}</div>` : '');
+}
+
+// ── 日付ユーティリティ ────────────────────────────
+function parseYMD(s) {
+  if (!s) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+}
+function today0() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
+function utcOf(d) { return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()); }
+function diffDays(a, b) { return Math.round((utcOf(b) - utcOf(a)) / 86400000); }
+function addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
+function addMonths(d, n) { return new Date(d.getFullYear(), d.getMonth() + n, 1); }
+function daysInMonth(d) { return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); }
+function startOfWeek(d) { return addDays(d, -((d.getDay() + 6) % 7)); }   // 月曜始まり
+function startOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+function fmtMD(d) { return `${d.getMonth() + 1}/${d.getDate()}`; }
+function fmtYMD(d) {
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+// ── フィルタ適用 ──────────────────────────────────
+function isParentDone(row) {
+  return row.children.length > 0 && row.children.every(c => c.statusId === 3);
+}
+
+function matchCustomStatus(row) {
+  if (filter.customStatus === 'all') return true;
+  if (!row.customStatus) return false;
+  const m = row.customStatus.match(/^(\d+)/);
+  if (!m) return false;
+  const num = parseInt(m[1], 10);
+  switch (filter.customStatus) {
+    case '見積':   return num >= 0  && num <= 19;
+    case '設計':   return num >= 20 && num <= 29;
+    case '正式':   return num >= 30 && num <= 39;
+    case '開発':   return num >= 40 && num <= 49;
+    case 'テスト': return num >= 59 && num <= 60;
+    case '本番':   return num === 69;
+  }
+  return true;
+}
+
+/**
+ * バーを描く期間を決める。
+ * 子課題は自身の開始日・期限日が両方揃っている場合のみ。
+ * 親案件は自身の日付を優先し、欠けていれば子課題の最小開始〜最大期限で補完する
+ * （Backlog では親案件に日付を入れない運用が多いため）。
+ * 戻り値: { start: Date, due: Date, rolled: boolean } または null
+ */
+function resolveRange(item, kind) {
+  const own = { s: parseYMD(item.start), d: parseYMD(item.due) };
+  if (own.s && own.d) return { start: own.s, due: own.d, rolled: false };
+  if (kind !== 'parent') return null;
+
+  const starts = item.children.map(c => parseYMD(c.start)).filter(Boolean);
+  const dues   = item.children.map(c => parseYMD(c.due)).filter(Boolean);
+  if (own.s) starts.push(own.s);
+  if (own.d) dues.push(own.d);
+  if (!starts.length || !dues.length) return null;
+  return {
+    start: new Date(Math.min(...starts)),
+    due:   new Date(Math.max(...dues)),
+    rolled: true,
+  };
+}
+
+/** フィルタ後の行データを [{parent, children, range, autoExpand}] で返す */
+function visibleRows() {
+  const assigneeActive = filter.assignee !== 'all';
+  return allData.filter(row => {
+    if (filter.health !== 'all' && row.health !== filter.health) return false;
+    if (filter.status === 'done' && !isParentDone(row)) return false;
+    if (filter.status === 'wip'  &&  isParentDone(row)) return false;
+    if (assigneeActive
+        && row.assignee !== filter.assignee
+        && !row.children.some(c => c.assignee === filter.assignee)) return false;
+    return matchCustomStatus(row);
+  }).map(row => {
+    // 担当者フィルタ時、親が一致しなければ一致する子課題だけを表示する（index.html と同じ）
+    const parentMatches = !assigneeActive || row.assignee === filter.assignee;
+    let children = parentMatches ? row.children : row.children.filter(c => c.assignee === filter.assignee);
+    // 親の期間集約は担当者フィルタに左右されない（案件そのものの期間として扱う）
+    const range = resolveRange(row, 'parent');
+    if (hideUndated) children = children.filter(c => resolveRange(c, 'child'));
+    return { parent: row, children, range, autoExpand: assigneeActive && children.length > 0 };
+  }).filter(r => !hideUndated || r.range);
+}
+
+/** 子課題のソート（index.html の childSort 設定を踏襲）*/
+function sortChildren(children) {
+  return [...children].sort((a, b) => {
+    const nameA = a.assignee || '未割当', nameB = b.assignee || '未割当';
+    const startA = a.start || '9999-12-31', startB = b.start || '9999-12-31';
+    if (filter.childSort === 'date-assignee') {
+      if (startA !== startB) return startA.localeCompare(startB);
+      return nameA.localeCompare(nameB, 'ja');
+    }
+    if (nameA !== nameB) return nameA.localeCompare(nameB, 'ja');
+    return startA.localeCompare(startB);
+  });
+}
+
+// ── 時間軸モデル ──────────────────────────────────
+/**
+ * 表示対象の全課題（親＋子）の start/due から軸の範囲を決め、
+ * 目盛り列・上段グループ・座標変換関数を持つ axis を組み立てる。
+ * 展開状態に関わらず全課題を対象にすることで、開閉しても軸がぶれない。
+ */
+function buildAxis(rows) {
+  const colW = SCALES[scale].colW;
+  const pad  = SCALES[scale].padUnits;
+
+  let min = null, max = null;
+  const take = (r) => {
+    if (!r) return;
+    if (!min || r.start < min) min = r.start;
+    if (!max || r.due   > max) max = r.due;
+  };
+  for (const { range, children } of rows) {
+    take(range);
+    for (const c of children) take(resolveRange(c, 'child'));
+  }
+  const t = today0();
+  if (!min || !max) { min = addDays(t, -30); max = addDays(t, 30); }
+  // 今日が必ず軸に含まれるようにする
+  if (t < min) min = t;
+  if (t > max) max = t;
+
+  // 前後に余白を付けたうえで、粒度の単位境界へスナップする
+  let axisStart, axisEnd;
+  if (scale === 'day') {
+    axisStart = addDays(min, -pad);
+    axisEnd   = addDays(max,  pad);
+  } else if (scale === 'week') {
+    axisStart = startOfWeek(addDays(min, -pad * 7));
+    axisEnd   = addDays(startOfWeek(addDays(max, pad * 7)), 6);
+  } else {
+    axisStart = startOfMonth(addMonths(min, -pad));
+    axisEnd   = addDays(addMonths(startOfMonth(max), pad + 1), -1);
+  }
+
+  // 列の生成
+  const cols = [];
+  if (scale === 'month') {
+    let cur = axisStart;
+    while (cur <= axisEnd) {
+      cols.push({
+        date: cur,
+        label: `${cur.getMonth() + 1}月`, sub: '',
+        weekend: false,
+        boundary: cur.getMonth() === 0,               // 年初を太線に
+        group: `${cur.getFullYear()}年`,
+        isToday: cur.getFullYear() === t.getFullYear() && cur.getMonth() === t.getMonth(),
+      });
+      cur = addMonths(cur, 1);
+    }
+  } else {
+    const step = scale === 'day' ? 1 : 7;
+    let cur = axisStart;
+    while (cur <= axisEnd) {
+      const isDay = scale === 'day';
+      cols.push({
+        date: cur,
+        label: isDay ? String(cur.getDate()) : fmtMD(cur),
+        sub:   isDay ? '日月火水木金土'[cur.getDay()] : '',
+        weekend: isDay && (cur.getDay() === 0 || cur.getDay() === 6),
+        boundary: isDay ? cur.getDate() === 1 : cur.getDate() <= 7,
+        group: `${cur.getFullYear()}年${cur.getMonth() + 1}月`,
+        isToday: isDay ? diffDays(cur, t) === 0 : (t >= cur && t < addDays(cur, 7)),
+      });
+      cur = addDays(cur, step);
+    }
+  }
+  cols.forEach((c, i) => { c.x = i * colW; c.w = colW; });
+
+  // 上段グループ（連続する同一ラベルをまとめる）
+  const groups = [];
+  for (const c of cols) {
+    const last = groups[groups.length - 1];
+    if (last && last.label === c.group) last.w += colW;
+    else groups.push({ label: c.group, x: c.x, w: colW });
+  }
+
+  /** 日付 → X 座標(px)。月粒度では月内の日割りで按分する。 */
+  const xOf = (d) => {
+    if (!d) return null;
+    if (scale === 'day')  return diffDays(axisStart, d) * colW;
+    if (scale === 'week') return diffDays(axisStart, d) / 7 * colW;
+    const months = (d.getFullYear() - axisStart.getFullYear()) * 12 + (d.getMonth() - axisStart.getMonth());
+    return (months + (d.getDate() - 1) / daysInMonth(d)) * colW;
+  };
+  /** 指定日 1 日分の幅(px)。バーの終端を期限日「込み」にするために使う。 */
+  const dayW = (d) => {
+    if (scale === 'day')  return colW;
+    if (scale === 'week') return colW / 7;
+    return colW / daysInMonth(d);
+  };
+
+  return { cols, groups, colW, width: cols.length * colW, xOf, dayW, todayX: xOf(t) };
+}
+
+// ── 健全性（子課題はフロント側で判定）────────────
+function childHealth(c) {
+  if (c.statusId === 3) return 'green';                       // 完了
+  const t = today0();
+  const due = parseYMD(c.due);
+  if (due && due < t) return 'red';
+  if (c.plannedH > 0 && c.actualH > c.plannedH * 1.2) return 'red';
+  if (due && diffDays(t, due) <= 3) return 'yellow';
+  if (c.plannedH > 0 && c.actualH > c.plannedH) return 'yellow';
+  return 'green';
+}
+
+/** 期間に対する「今日時点であるべき進捗率」（index.html の planProgress と同じ考え方）*/
+function planProgressOf(s, d) {
+  if (!s || !d || d <= s) return null;
+  const t = today0();
+  if (t <= s) return 0;
+  if (t >= d) return 100;
+  return Math.round((t - s) / (d - s) * 100);
+}
+
+// ── 描画 ──────────────────────────────────────────
+function renderGantt() {
+  const rows = visibleRows();
+  const scroll = document.getElementById('ganttScroll');
+  const prevScrollLeft = scroll.scrollLeft;
+  const prevScrollTop  = scroll.scrollTop;
+
+  if (!rows.length) { showState('🔍', '該当する案件がありません'); return; }
+
+  document.getElementById('ganttState').style.display = 'none';
+  document.getElementById('ganttCanvas').style.display = '';
+
+  axis = buildAxis(rows);
+  const totalW = LEFT_W + axis.width;
+  const head = document.getElementById('ganttHead');
+  const body = document.getElementById('ganttRows');
+  head.style.width = body.style.width = totalW + 'px';
+
+  const childCount = rows.reduce((s, r) => s + r.children.length, 0);
+  updateHideChipLabel();
+  head.innerHTML =
+    `<div class="gcell-left" style="width:${LEFT_W}px">案件 / 課題
+       <span class="head-count">${rows.length} 案件 / ${childCount} 課題</span>
+     </div>` +
+    `<div class="gtrack" style="width:${axis.width}px">
+       <div class="gt-groups">${axis.groups.map(g =>
+         `<div class="gt-group" style="left:${g.x}px;width:${g.w}px"><span>${g.label}</span></div>`).join('')}
+         ${axis.todayX != null ? `<div class="gt-today-flag" style="left:${axis.todayX}px"><span>今日</span></div>` : ''}
+       </div>
+       <div class="gt-cols">${axis.cols.map(c =>
+         `<div class="gt-col${c.weekend ? ' weekend' : ''}${c.isToday ? ' today' : ''}" style="left:${c.x}px;width:${c.w}px">` +
+         `${c.label}${c.sub ? `<small>${c.sub}</small>` : ''}</div>`).join('')}
+       </div>
+     </div>`;
+
+  // 背景（グリッド・週末・今日ライン）は行の下に 1 枚だけ敷く
+  let html = `<div class="gantt-bg" style="left:${LEFT_W}px;width:${axis.width}px">` +
+    axis.cols.map(c =>
+      `<div class="gcol${c.weekend ? ' weekend' : ''}${c.boundary ? ' month-start' : ''}" style="left:${c.x}px;width:${c.w}px"></div>`).join('') +
+    (axis.todayX != null ? `<div class="gtoday" style="left:${axis.todayX}px"></div>` : '') +
+    `</div>`;
+
+  for (const { parent, children, range, autoExpand } of rows) {
+    const isOpen = expanded.has(parent.id) || autoExpand;
+    if (autoExpand) expanded.add(parent.id);
+
+    const badge = children.length === parent.children.length
+      ? `${parent.children.length}`
+      : `${children.length}/${parent.children.length}`;
+    const icon = parent.health === 'green' ? '🟢' : parent.health === 'yellow' ? '🟡' : '🔴';
+    const pBar = barCell(parent, 'parent', range);
+
+    html += `<div class="grow">
+      <div class="gcell-left" style="width:${LEFT_W}px">
+        <button class="toggle-btn${isOpen ? ' open' : ''}" onclick="toggleRow('${escAttr(parent.id)}')" aria-label="展開">▶</button>
+        <span class="health-icon">${icon}</span>
+        <a href="${escAttr(parent.url)}" target="_blank" rel="noopener" class="issue-key">${escHtml(parent.id)}</a>
+        <span class="issue-title" title="${escAttr(parent.title)}">${escHtml(parent.title)}</span>
+        <span class="count-badge">${badge}</span>
+        ${pBar ? '' : '<span class="no-date">日付未設定</span>'}
+        <span class="avatar" title="${escAttr(parent.assignee)}">${escHtml((parent.assignee || '?')[0])}</span>
+      </div>
+      <div class="gtrack" style="width:${axis.width}px">${pBar}</div>
+    </div>`;
+
+    if (!isOpen) continue;
+    for (const c of sortChildren(children)) {
+      const cBar = barCell(c, 'child');
+      html += `<div class="grow is-child">
+        <div class="gcell-left" style="width:${LEFT_W}px">
+          <span class="toggle-spacer"></span>
+          <a href="${escAttr(c.url)}" target="_blank" rel="noopener" class="issue-key">${escHtml(c.id)}</a>
+          <span class="issue-title" title="${escAttr(c.title)}">${escHtml(c.title)}</span>
+          ${cBar ? '' : '<span class="no-date">日付未設定</span>'}
+          <span class="avatar" title="${escAttr(c.assignee)}">${escHtml((c.assignee || '?')[0])}</span>
+        </div>
+        <div class="gtrack" style="width:${axis.width}px">${cBar}</div>
+      </div>`;
+    }
+  }
+  body.innerHTML = html;
+
+  if (!didInitialScroll) { didInitialScroll = true; scrollToToday(); }
+  else { scroll.scrollLeft = prevScrollLeft; scroll.scrollTop = prevScrollTop; }
+}
+
+/** 1 課題ぶんのバー HTML。期間が決まらなければ空文字を返す。 */
+function barCell(item, kind, range) {
+  const r = range !== undefined ? range : resolveRange(item, kind);
+  if (!r) return '';
+
+  const x1 = axis.xOf(r.start);
+  const x2 = axis.xOf(r.due) + axis.dayW(r.due);
+  const invalid = x2 <= x1;                       // 開始日 > 期限日 の逆転データ
+  const w = Math.max(invalid ? 8 : x2 - x1, 6);
+
+  const health = kind === 'parent' ? item.health : childHealth(item);
+  const color  = health === 'green' ? 'var(--green)' : health === 'yellow' ? 'var(--yellow)' : 'var(--red)';
+
+  // 進捗率: 子は進捗率フィールド優先、無ければ工数比。親は工数消化率。
+  const pct = kind === 'child' && item.progress != null
+    ? item.progress
+    : (item.plannedH > 0 ? Math.round(item.actualH / item.plannedH * 100) : 0);
+  const plan = planProgressOf(r.start, r.due);
+
+  const planMark = plan != null && !invalid
+    ? `<div class="gbar-plan" style="left:${Math.min(Math.max(plan, 0), 100)}%"></div>` : '';
+  const pctLabel = w >= 46 ? `<div class="gbar-pct">${pct}%</div>` : '';
+
+  return `<div class="gbar${invalid ? ' invalid' : ''}${r.rolled ? ' rolled' : ''}"
+      style="left:${x1}px;width:${w}px;--barc:${color}"
+      onclick="openIssue('${escAttr(item.id)}')"
+      onmouseenter="showTip(event,'${escAttr(item.id)}')" onmousemove="moveTip(event)" onmouseleave="hideTip()">
+    <div class="gbar-fill" style="width:${Math.min(pct, 100)}%"></div>
+    ${planMark}${pctLabel}
+  </div>`;
+}
+
+// ── 展開・スクロール ──────────────────────────────
+function toggleRow(id) {
+  if (expanded.has(id)) expanded.delete(id); else expanded.add(id);
+  renderGantt();
+}
+
+/** バークリックで該当課題を Backlog で開く */
+function openIssue(id) {
+  const found = findItem(id);
+  if (found) window.open(found.item.url, '_blank', 'noopener');
+}
+
+function setAllExpanded(open) {
+  expanded = open ? new Set(visibleRows().map(r => r.parent.id)) : new Set();
+  renderGantt();
+}
+
+function toggleHideUndated(btn) {
+  hideUndated = !hideUndated;
+  btn.classList.toggle('active', hideUndated);
+  try { localStorage.setItem(HIDE_KEY, hideUndated ? '1' : '0'); } catch (e) {}
+  renderGantt();
+}
+
+/** 「日付なしを隠す」チップに、除外されている件数を添える */
+function updateHideChipLabel() {
+  const n = countUndated();
+  document.getElementById('chipHideUndated').textContent =
+    n ? `日付なしを隠す (${n})` : '日付なしを隠す';
+}
+
+/** 「日付なしを隠す」で除外された親案件・子課題の合計件数 */
+function countUndated() {
+  let n = 0;
+  for (const row of allData) {
+    if (!resolveRange(row, 'parent')) { n += 1 + row.children.length; continue; }
+    n += row.children.filter(c => !resolveRange(c, 'child')).length;
+  }
+  return n;
+}
+
+function scrollToToday() {
+  if (!axis || axis.todayX == null) return;
+  const el = document.getElementById('ganttScroll');
+  el.scrollLeft = Math.max(0, LEFT_W + axis.todayX - el.clientWidth / 2);
+}
+
+// ── ツールチップ ──────────────────────────────────
+function findItem(id) {
+  for (const row of allData) {
+    if (row.id === id) return { item: row, kind: 'parent', parent: null };
+    const c = row.children.find(k => k.id === id);
+    if (c) return { item: c, kind: 'child', parent: row };
+  }
+  return null;
+}
+
+function showTip(ev, id) {
+  const found = findItem(id);
+  if (!found) return;
+  const { item, kind, parent } = found;
+  const health = kind === 'parent' ? item.health : childHealth(item);
+  const icon = health === 'green' ? '🟢 正常' : health === 'yellow' ? '🟡 注意' : '🔴 危険';
+  const r = resolveRange(item, kind);
+  const days = r ? diffDays(r.start, r.due) + 1 : null;
+  const pct = kind === 'child' && item.progress != null
+    ? item.progress
+    : (item.plannedH > 0 ? Math.round(item.actualH / item.plannedH * 100) : 0);
+  const plan = r ? planProgressOf(r.start, r.due) : null;
+  const diff = item.actualH - item.plannedH;
+
+  const period = r
+    ? `${fmtYMD(r.start)} → ${fmtYMD(r.due)}（${days}日）${r.rolled ? ' ※子課題から集約' : ''}`
+    : '未設定';
+  const rows = [
+    ['期間',   period],
+    ['予定/実績', `${item.plannedH}h / ${item.actualH}h（${diff >= 0 ? '+' : ''}${Math.round(diff * 10) / 10}h）`],
+    ['進捗',   `${pct}%${plan != null ? `　予定 ${plan}%` : ''}`],
+    ['担当者', item.assignee || '未割当'],
+    ['状態',   item.status || '—'],
+    [kind === 'parent' ? 'ステータス' : 'チェック状態', (kind === 'parent' ? item.customStatus : item.checkStatus) || '—'],
+    ['健全性', icon],
+  ];
+  if (parent) rows.unshift(['親案件', `${parent.id} ${parent.title}`]);
+
+  const tip = document.getElementById('gtip');
+  tip.innerHTML =
+    `<div class="gtip-key">${escHtml(item.id)}</div>
+     <div class="gtip-title">${escHtml(item.title)}</div>
+     <dl class="gtip-grid">${rows.map(([k, v]) =>
+       `<dt>${k}</dt><dd>${escHtml(v)}</dd>`).join('')}</dl>`;
+  tip.classList.add('open');
+  moveTip(ev);
+}
+
+function moveTip(ev) {
+  const tip = document.getElementById('gtip');
+  if (!tip.classList.contains('open')) return;
+  const pad = 14;
+  const r = tip.getBoundingClientRect();
+  let x = ev.clientX + pad;
+  let y = ev.clientY + pad;
+  if (x + r.width  > window.innerWidth  - 8) x = ev.clientX - r.width  - pad;
+  if (y + r.height > window.innerHeight - 8) y = ev.clientY - r.height - pad;
+  tip.style.left = Math.max(8, x) + 'px';
+  tip.style.top  = Math.max(8, y) + 'px';
+}
+
+function hideTip() { document.getElementById('gtip').classList.remove('open'); }
+
+// ── フィルター操作 ────────────────────────────────
+function setHealthFilter(val, btn) {
+  filter.health = val;
+  document.querySelectorAll('.chip[data-f="health"]').forEach(c => c.classList.toggle('active', c === btn));
+  saveFilter(); renderGantt();
+}
+
+function toggleStatusFilter(val, btn) {
+  const on = !btn.classList.contains('active');
+  document.querySelectorAll('.chip[data-f="status"]').forEach(c => c.classList.remove('active'));
+  if (on) btn.classList.add('active');
+  filter.status = on ? val : null;
+  saveFilter(); renderGantt();
+}
+
+function setCustomStatusFilter(val, btn) {
+  filter.customStatus = val;
+  document.querySelectorAll('.chip[data-f="customStatus"]').forEach(c => c.classList.toggle('active', c === btn));
+  saveFilter(); renderGantt();
+}
+
+function setAssigneeFilter(val) {
+  filter.assignee = val;
+  saveFilter(); renderGantt();
+}
+
+function updateAssigneeFilter() {
+  const select = document.getElementById('assigneeFilter');
+  if (!select) return;
+  const current = filter.assignee;
+  const assignees = [...new Set(
+    allData.flatMap(r => [r.assignee, ...r.children.map(c => c.assignee)]).filter(Boolean)
+  )].sort();
+  select.innerHTML = '<option value="all">すべて</option>' +
+    assignees.map(a => `<option value="${escAttr(a)}">${escHtml(a)}</option>`).join('');
+  if (assignees.includes(current)) select.value = current;
+  else { filter.assignee = 'all'; select.value = 'all'; }
+}
+
+function setScale(val, btn) {
+  scale = val;
+  document.querySelectorAll('.chip[data-scale]').forEach(c => c.classList.toggle('active', c === btn));
+  try { localStorage.setItem(SCALE_KEY, val); } catch (e) {}
+  renderGantt();
+  scrollToToday();   // 粒度が変わると座標系も変わるため今日基準に寄せ直す
+}
+
+document.querySelectorAll('.chip[data-f]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const f = btn.dataset.f, v = btn.dataset.v;
+    if (f === 'health') setHealthFilter(v, btn);
+    else if (f === 'status') toggleStatusFilter(v, btn);
+    else if (f === 'customStatus') setCustomStatusFilter(v, btn);
+  });
+});
+document.querySelectorAll('.chip[data-scale]').forEach(btn => {
+  btn.addEventListener('click', () => setScale(btn.dataset.scale, btn));
+});
+
+// ── ユーティリティ ────────────────────────────────
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function escAttr(s) {
+  return escHtml(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ── テーマ切替 ────────────────────────────────────
+function applyTheme(theme) {
+  const btn = document.getElementById('btnTheme');
+  if (theme === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+    btn.textContent = '🌙 ダーク';
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+    btn.textContent = '☀ ライト';
+  }
+}
+function toggleTheme() {
+  const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+  applyTheme(next);
+  localStorage.setItem('bpm2-theme', next);
+}
+
+// ── 起動 ─────────────────────────────────────────
+applyTheme(localStorage.getItem('bpm2-theme') || 'dark');
+loadFilter();
+applyFilterUI();
+fetchData();
+setInterval(() => fetchData(), POLL_MS);
+</script>
+</body>
+</html>
