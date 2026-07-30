@@ -24,6 +24,12 @@ services:
       - backend
     ports:
       - "3031:80"
+    volumes:
+      # 静的ファイルはイメージに焼き込まず bind mount で配信する。
+      # これにより html を変更しても再ビルド不要で restart だけで反映できる
+      # （イメージ再ビルドは export に 2〜3 分かかるため）。
+      - ./frontend/html:/usr/share/nginx/html:ro
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
       - bpm-net
 
