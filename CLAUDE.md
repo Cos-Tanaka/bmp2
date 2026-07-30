@@ -26,6 +26,16 @@ docker compose down
 
 The dashboard is served at `http://localhost:3031`.
 
+### Applying changes
+
+`frontend/html` and `frontend/nginx.conf` are bind-mounted into the frontend container, so a frontend-only change needs no rebuild:
+
+```bash
+docker compose restart frontend
+```
+
+Backend changes still require `docker compose up -d --build`. Avoid `--build` when nothing under `backend/` changed: on this host the build steps themselves are cached, but exporting the image into the containerd store takes 2–3 minutes (layer export plus the provenance attestation manifest that BuildKit generates by default). `BUILDX_NO_DEFAULT_ATTESTATIONS=1` cuts roughly 50 s off a rebuild.
+
 There is no test suite and no linter configured.
 
 ## Environment variables
