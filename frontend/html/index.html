@@ -315,6 +315,7 @@
   <span class="filter-label">状態</span>
   <button class="chip" id="filterWip" onclick="toggleStatusFilter('wip',this)">対応中</button>
   <button class="chip" id="filterDone" onclick="toggleStatusFilter('done',this)">完了</button>
+  <button class="chip" id="filterHideDone" onclick="toggleHideDone(this)">✅ 処理済み・完了を隠す</button>
   <div class="filter-sep"></div>
   <span class="filter-label">担当者</span>
   <select class="select-filter" id="assigneeFilter" onchange="setAssigneeFilter(this.value)">
@@ -452,9 +453,13 @@ let fieldOptions = null;          // 進捗率・チェック状態の選択肢
 let projectUsers = null;          // 担当者プルダウンの選択肢 [{id, name}]
 let modalChildId = null;          // 現在モーダルで開いている子課題ID
 let modalOriginal = {};           // モーダル表示時の初期選択値（変更検知用）
-let filter = { health: 'all', status: null, assignee: 'all', customStatus: 'all', childSort: 'assignee-date' };
+let filter = { health: 'all', status: null, assignee: 'all', customStatus: 'all', childSort: 'assignee-date', hideDone: false };
 const POLL_MS = 60000; // 60秒ポーリング
 const FILTER_KEY = 'bpm2-filter';
+
+// Backlog 組み込みステータス: 1=未対応 2=処理中 3=処理済み 4=完了
+const DONE_STATUS_IDS = [3, 4];
+const isDoneStatus = x => DONE_STATUS_IDS.includes(x.statusId);
 
 // ── フィルタの保存・復元 ──────────────────────────
 function saveFilter() {
@@ -486,6 +491,8 @@ function applyFilterUI() {
   });
   const sort = document.getElementById('childSortFilter');
   if (sort) sort.value = filter.childSort;
+  const hideDoneChip = document.getElementById('filterHideDone');
+  if (hideDoneChip) hideDoneChip.classList.toggle('active', filter.hideDone);
   // 担当者セレクトは取得後 updateAssigneeFilter() で選択肢生成・反映される
 }
 
@@ -583,7 +590,8 @@ function setText(id, val, cls) {
 
 // ── テーブル描画 ──────────────────────────────────
 function isParentDone(row) {
-  return row.children.length > 0 && row.children.every(c => c.statusId === 3);
+  if (isDoneStatus(row)) return true;
+  return row.children.length > 0 && row.children.every(isDoneStatus);
 }
 
 function planProgress(start, due) {
@@ -680,6 +688,7 @@ function renderTable() {
     if (filter.health !== 'all' && row.health !== filter.health) return false;
     if (filter.status === 'done'  && !isParentDone(row)) return false;
     if (filter.status === 'wip'   && isParentDone(row))  return false;
+    if (filter.hideDone && isParentDone(row)) return false;
     // 担当者: 親が一致、または子課題に一致があれば表示（親の担当者が異なっても表示する）
     if (filter.assignee !== 'all'
         && row.assignee !== filter.assignee
@@ -722,9 +731,10 @@ function renderTable() {
     // 担当者フィルタ時: 親が一致しない場合は一致する子課題のみ表示し、自動展開する
     const assigneeActive = filter.assignee !== 'all';
     const parentMatches  = !assigneeActive || row.assignee === filter.assignee;
-    const visibleChildren = parentMatches
+    let visibleChildren = parentMatches
       ? row.children
       : row.children.filter(c => c.assignee === filter.assignee);
+    if (filter.hideDone) visibleChildren = visibleChildren.filter(c => !isDoneStatus(c));
     const autoExpand = assigneeActive && visibleChildren.length > 0;
     const countBadge = visibleChildren.length === row.children.length
       ? `${row.children.length}`
@@ -1206,6 +1216,23 @@ function toggleStatusFilter(val, btn) {
     document.querySelectorAll('#filterWip,#filterDone').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     filter.status = val;
+    // 「完了のみ表示」と「完了を隠す」は矛盾するため、後から選んだ方を優先する
+    if (val === 'done' && filter.hideDone) {
+      filter.hideDone = false;
+      const hideDoneChip = document.getElementById('filterHideDone');
+      if (hideDoneChip) hideDoneChip.classList.remove('active');
+    }
+  }
+  saveFilter();
+  renderTable();
+}
+function toggleHideDone(btn) {
+  filter.hideDone = !filter.hideDone;
+  btn.classList.toggle('active', filter.hideDone);
+  // 「完了のみ表示」中に隠すと結果が常に空になるため解除する
+  if (filter.hideDone && filter.status === 'done') {
+    filter.status = null;
+    document.querySelectorAll('#filterWip,#filterDone').forEach(b => b.classList.remove('active'));
   }
   saveFilter();
   renderTable();

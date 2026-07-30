@@ -264,6 +264,7 @@
   <span class="filter-label">状態</span>
   <button class="chip" data-f="status" data-v="wip">対応中</button>
   <button class="chip" data-f="status" data-v="done">完了</button>
+  <button class="chip" id="chipHideDone" onclick="toggleHideDone(this)">✅ 処理済み・完了を隠す</button>
   <div class="filter-sep"></div>
   <span class="filter-label">担当者</span>
   <select class="select-filter" id="assigneeFilter" onchange="setAssigneeFilter(this.value)">
@@ -317,8 +318,12 @@
 let allData = [];
 let expanded = new Set();          // 展開中の親案件 ID
 let axis = null;                   // 現在の時間軸モデル
-let filter = { health: 'all', status: null, assignee: 'all', customStatus: 'all', childSort: 'assignee-date' };
+let filter = { health: 'all', status: null, assignee: 'all', customStatus: 'all', childSort: 'assignee-date', hideDone: false };
 let scale = 'week';
+
+// Backlog 組み込みステータス: 1=未対応 2=処理中 3=処理済み 4=完了
+const DONE_STATUS_IDS = [3, 4];
+const isDoneStatus = x => DONE_STATUS_IDS.includes(x.statusId);
 let hideUndated = true;            // 日付が引けない行を隠す（Backlog 側で未設定の課題が多いため既定 ON）
 let didInitialScroll = false;
 
@@ -360,6 +365,8 @@ function applyFilterUI() {
     c.classList.toggle('active', c.dataset.scale === scale);
   });
   document.getElementById('chipHideUndated').classList.toggle('active', hideUndated);
+  const hideDoneChip = document.getElementById('chipHideDone');
+  if (hideDoneChip) hideDoneChip.classList.toggle('active', filter.hideDone);
 }
 
 // ── API 取得 ──────────────────────────────────────
@@ -426,7 +433,8 @@ function fmtYMD(d) {
 
 // ── フィルタ適用 ──────────────────────────────────
 function isParentDone(row) {
-  return row.children.length > 0 && row.children.every(c => c.statusId === 3);
+  if (isDoneStatus(row)) return true;
+  return row.children.length > 0 && row.children.every(isDoneStatus);
 }
 
 function matchCustomStatus(row) {
@@ -477,6 +485,7 @@ function visibleRows() {
     if (filter.health !== 'all' && row.health !== filter.health) return false;
     if (filter.status === 'done' && !isParentDone(row)) return false;
     if (filter.status === 'wip'  &&  isParentDone(row)) return false;
+    if (filter.hideDone && isParentDone(row)) return false;
     if (assigneeActive
         && row.assignee !== filter.assignee
         && !row.children.some(c => c.assignee === filter.assignee)) return false;
@@ -488,6 +497,7 @@ function visibleRows() {
     // 親の期間集約は担当者フィルタに左右されない（案件そのものの期間として扱う）
     const range = resolveRange(row, 'parent');
     if (hideUndated) children = children.filter(c => resolveRange(c, 'child'));
+    if (filter.hideDone) children = children.filter(c => !isDoneStatus(c));
     return { parent: row, children, range, autoExpand: assigneeActive && children.length > 0 };
   }).filter(r => !hideUndated || r.range);
 }
@@ -607,7 +617,7 @@ function buildAxis(rows) {
 
 // ── 健全性（子課題はフロント側で判定）────────────
 function childHealth(c) {
-  if (c.statusId === 3) return 'green';                       // 完了
+  if (isDoneStatus(c)) return 'green';                         // 処理済み/完了
   const t = today0();
   const due = parseYMD(c.due);
   if (due && due < t) return 'red';
@@ -866,6 +876,23 @@ function toggleStatusFilter(val, btn) {
   document.querySelectorAll('.chip[data-f="status"]').forEach(c => c.classList.remove('active'));
   if (on) btn.classList.add('active');
   filter.status = on ? val : null;
+  // 「完了のみ表示」と「完了を隠す」は矛盾するため、後から選んだ方を優先する
+  if (on && val === 'done' && filter.hideDone) {
+    filter.hideDone = false;
+    const hideDoneChip = document.getElementById('chipHideDone');
+    if (hideDoneChip) hideDoneChip.classList.remove('active');
+  }
+  saveFilter(); renderGantt();
+}
+
+function toggleHideDone(btn) {
+  filter.hideDone = !filter.hideDone;
+  btn.classList.toggle('active', filter.hideDone);
+  // 「完了のみ表示」中に隠すと結果が常に空になるため解除する
+  if (filter.hideDone && filter.status === 'done') {
+    filter.status = null;
+    document.querySelectorAll('.chip[data-f="status"]').forEach(c => c.classList.remove('active'));
+  }
   saveFilter(); renderGantt();
 }
 
