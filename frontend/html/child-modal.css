@@ -1,0 +1,77 @@
+/* 子課題詳細モーダル・実績工数入力パネル（一覧・ガント共通） */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.6);
+  display: none; align-items: flex-start; justify-content: center;
+  z-index: 1000; padding: 60px 16px; overflow-y: auto;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--bg2); border: 1px solid var(--border2); border-radius: 10px;
+  width: 100%; max-width: 560px; box-shadow: 0 12px 40px rgba(0,0,0,.4);
+  animation: modalIn .18s ease;
+}
+@keyframes modalIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+.modal-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+}
+.modal-head .m-key { font-family: var(--mono); font-size: 12px; color: var(--accent); margin-bottom: 4px; display: inline-block; }
+.modal-head .m-title { font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.4; }
+.modal-close {
+  background: none; border: none; color: var(--text3); font-size: 20px; cursor: pointer;
+  line-height: 1; padding: 0 4px; flex-shrink: 0; transition: .15s;
+}
+.modal-close:hover { color: var(--text); }
+.modal-body { padding: 16px 20px; }
+.m-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+.m-field { display: flex; flex-direction: column; gap: 3px; }
+.m-field.full { grid-column: 1 / -1; }
+.m-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; }
+.m-value { font-size: 13px; color: var(--text); }
+.m-value.mono { font-family: var(--mono); }
+.m-select {
+  background: var(--bg4); border: 1px solid var(--border2); border-radius: 6px;
+  color: var(--text); padding: 5px 8px; font-size: 13px; font-family: var(--font);
+  outline: none; cursor: pointer; width: 100%; transition: .15s;
+}
+.m-select:hover { border-color: var(--accent); }
+.m-select:focus { border-color: var(--accent); }
+.modal-foot {
+  padding: 12px 20px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: flex-end; gap: 12px;
+}
+.m-msg { margin-right: auto; font-size: 12px; }
+.m-msg.ok { color: var(--green); } .m-msg.err { color: var(--red); }
+.m-save {
+  background: var(--green); border: 1px solid var(--green); color: #fff;
+  border-radius: 6px; padding: 6px 16px; font-size: 12px; font-weight: 500;
+  cursor: pointer; font-family: var(--font); transition: .15s;
+}
+.m-save:hover { filter: brightness(1.1); }
+.m-save:disabled { opacity: .5; cursor: default; }
+
+.w-form { display: flex; flex-direction: column; gap: 12px; }
+.w-form-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 4px; }
+.w-history { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 14px; }
+.w-history-title { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
+.w-hist-row {
+  display: grid; grid-template-columns: 1fr auto auto auto; gap: 12px; align-items: center;
+  padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 12px;
+}
+.w-hist-row:last-child { border-bottom: none; }
+.w-hist-name { color: var(--text); }
+.w-hist-date { font-family: var(--mono); font-size: 11px; color: var(--text3); white-space: nowrap; }
+.w-hist-hours { font-family: var(--mono); font-weight: 600; color: var(--green); white-space: nowrap; text-align: right; }
+.w-hist-del {
+  background: none; border: none; cursor: pointer; font-size: 13px; line-height: 1;
+  padding: 2px 4px; border-radius: 4px; opacity: .55;
+}
+.w-hist-del:hover { opacity: 1; background: var(--bg3, rgba(128,128,128,.15)); }
+.w-hist-del:disabled { opacity: .3; cursor: default; }
+.w-hist-empty { font-size: 12px; color: var(--text3); padding: 6px 0; }
+.m-link {
+  display: inline-block; background: var(--accent2); border: 1px solid var(--accent);
+  color: #fff; border-radius: 6px; padding: 6px 14px; font-size: 12px;
+  text-decoration: none; transition: .15s;
+}
+.m-link:hover { background: var(--accent); }

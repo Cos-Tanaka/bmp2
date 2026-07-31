@@ -178,87 +178,11 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* 子課題詳細モーダル */
-  .modal-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,.6);
-    display: none; align-items: flex-start; justify-content: center;
-    z-index: 1000; padding: 60px 16px; overflow-y: auto;
-  }
-  .modal-overlay.open { display: flex; }
-  .modal {
-    background: var(--bg2); border: 1px solid var(--border2); border-radius: 10px;
-    width: 100%; max-width: 560px; box-shadow: 0 12px 40px rgba(0,0,0,.4);
-    animation: modalIn .18s ease;
-  }
-  @keyframes modalIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
-  .modal-head {
-    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
-    padding: 16px 20px; border-bottom: 1px solid var(--border);
-  }
-  .modal-head .m-key { font-family: var(--mono); font-size: 12px; color: var(--accent); margin-bottom: 4px; display: inline-block; }
-  .modal-head .m-title { font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.4; }
-  .modal-close {
-    background: none; border: none; color: var(--text3); font-size: 20px; cursor: pointer;
-    line-height: 1; padding: 0 4px; flex-shrink: 0; transition: .15s;
-  }
-  .modal-close:hover { color: var(--text); }
-  .modal-body { padding: 16px 20px; }
-  .m-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
-  .m-field { display: flex; flex-direction: column; gap: 3px; }
-  .m-field.full { grid-column: 1 / -1; }
-  .m-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; }
-  .m-value { font-size: 13px; color: var(--text); }
-  .m-value.mono { font-family: var(--mono); }
-  .m-select {
-    background: var(--bg4); border: 1px solid var(--border2); border-radius: 6px;
-    color: var(--text); padding: 5px 8px; font-size: 13px; font-family: var(--font);
-    outline: none; cursor: pointer; width: 100%; transition: .15s;
-  }
-  .m-select:hover { border-color: var(--accent); }
-  .m-select:focus { border-color: var(--accent); }
-  .modal-foot {
-    padding: 12px 20px; border-top: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: flex-end; gap: 12px;
-  }
-  .m-msg { margin-right: auto; font-size: 12px; }
-  .m-msg.ok { color: var(--green); } .m-msg.err { color: var(--red); }
-  .m-save {
-    background: var(--green); border: 1px solid var(--green); color: #fff;
-    border-radius: 6px; padding: 6px 16px; font-size: 12px; font-weight: 500;
-    cursor: pointer; font-family: var(--font); transition: .15s;
-  }
-  .m-save:hover { filter: brightness(1.1); }
-  .m-save:disabled { opacity: .5; cursor: default; }
-
-  /* 実績工数入力レイヤー */
+  /* 実績工数入力（工数セルクリックのスタイル。モーダル本体は child-modal.css を参照） */
   .hours-actual-edit { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
   .hours-actual-edit:hover { color: var(--accent); }
-  .w-form { display: flex; flex-direction: column; gap: 12px; }
-  .w-form-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 4px; }
-  .w-history { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 14px; }
-  .w-history-title { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
-  .w-hist-row {
-    display: grid; grid-template-columns: 1fr auto auto auto; gap: 12px; align-items: center;
-    padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 12px;
-  }
-  .w-hist-row:last-child { border-bottom: none; }
-  .w-hist-name { color: var(--text); }
-  .w-hist-date { font-family: var(--mono); font-size: 11px; color: var(--text3); white-space: nowrap; }
-  .w-hist-hours { font-family: var(--mono); font-weight: 600; color: var(--green); white-space: nowrap; text-align: right; }
-  .w-hist-del {
-    background: none; border: none; cursor: pointer; font-size: 13px; line-height: 1;
-    padding: 2px 4px; border-radius: 4px; opacity: .55;
-  }
-  .w-hist-del:hover { opacity: 1; background: var(--bg3, rgba(128,128,128,.15)); }
-  .w-hist-del:disabled { opacity: .3; cursor: default; }
-  .w-hist-empty { font-size: 12px; color: var(--text3); padding: 6px 0; }
-  .m-link {
-    display: inline-block; background: var(--accent2); border: 1px solid var(--accent);
-    color: #fff; border-radius: 6px; padding: 6px 14px; font-size: 12px;
-    text-decoration: none; transition: .15s;
-  }
-  .m-link:hover { background: var(--accent); }
 </style>
+<link rel="stylesheet" href="child-modal.css">
 </head>
 <body>
 
@@ -343,51 +267,6 @@
   <button class="chip" onclick="setCustomStatusFilter('本番',this)">本番リリース済み</button>
 </div>
 
-<div class="modal-overlay" id="childModal" onclick="if(event.target===this)closeChildModal()">
-  <div class="modal" role="dialog" aria-modal="true">
-    <div class="modal-head">
-      <div>
-        <span class="m-key" id="mKey"></span>
-        <div class="m-title" id="mTitle"></div>
-      </div>
-      <button class="modal-close" onclick="closeChildModal()" aria-label="閉じる">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="m-grid" id="mGrid"></div>
-    </div>
-    <div class="modal-foot">
-      <span class="m-msg" id="mMsg"></span>
-      <button class="m-save" id="mSave" onclick="saveChildEdits()">保存</button>
-      <a class="m-link" id="mLink" href="#" target="_blank">Backlog で開く ↗</a>
-    </div>
-    <div class="modal-body" style="padding-top:16px">
-      <div class="w-history" style="margin-top:0;border-top:none;padding-top:0">
-        <div class="w-history-title">実績工数を入力</div>
-        <div class="w-form" style="margin-bottom:16px">
-          <div class="m-field">
-            <span class="m-label">追加工数 (h) <span style="color:var(--red)">*</span></span>
-            <input type="number" step="0.25" min="0" class="m-select" id="dwHours" placeholder="例: 1.5">
-          </div>
-          <div class="m-field">
-            <span class="m-label">名前 <span style="color:var(--red)">*</span></span>
-            <input type="text" class="m-select" id="dwName" placeholder="入力者名">
-          </div>
-          <div class="m-field">
-            <span class="m-label">日時 <span style="color:var(--red)">*</span></span>
-            <input type="datetime-local" class="m-select" id="dwDate">
-          </div>
-          <div class="w-form-foot">
-            <span class="m-msg" id="dwMsg"></span>
-            <button class="m-save" id="dwAdd" onclick="addWorklog('dw')">追加</button>
-          </div>
-        </div>
-        <div class="w-history-title">入力履歴</div>
-        <div id="dwHistory"></div>
-      </div>
-    </div>
-  </div>
-</div>
-
 <div class="modal-overlay" id="worklogModal" onclick="if(event.target===this)closeWorklogModal()">
   <div class="modal" role="dialog" aria-modal="true">
     <div class="modal-head">
@@ -446,13 +325,10 @@
   </table>
 </div>
 
+<script src="child-modal.js"></script>
 <script>
 // ── 状態 ──────────────────────────────────────────
 let allData = [];
-let fieldOptions = null;          // 進捗率・チェック状態の選択肢
-let projectUsers = null;          // 担当者プルダウンの選択肢 [{id, name}]
-let modalChildId = null;          // 現在モーダルで開いている子課題ID
-let modalOriginal = {};           // モーダル表示時の初期選択値（変更検知用）
 let filter = { health: 'all', status: null, assignee: 'all', customStatus: 'all', childSort: 'assignee-date', hideDone: false };
 const POLL_MS = 60000; // 60秒ポーリング
 const FILTER_KEY = 'bpm2-filter';
@@ -494,21 +370,6 @@ function applyFilterUI() {
   const hideDoneChip = document.getElementById('filterHideDone');
   if (hideDoneChip) hideDoneChip.classList.toggle('active', filter.hideDone);
   // 担当者セレクトは取得後 updateAssigneeFilter() で選択肢生成・反映される
-}
-
-// ── 編集用フィールド選択肢の取得 ──────────────────
-async function loadFieldOptions() {
-  try {
-    const res = await fetch('/api/field-options');
-    if (res.ok) fieldOptions = await res.json();
-  } catch (e) { /* 選択肢取得失敗時はモーダルで閲覧のみ */ }
-}
-
-async function loadProjectUsers() {
-  try {
-    const res = await fetch('/api/project-users');
-    if (res.ok) projectUsers = await res.json();
-  } catch (e) { /* 取得失敗時は担当者を閲覧表示にフォールバック */ }
 }
 
 // ── API 取得 ──────────────────────────────────────
@@ -834,6 +695,8 @@ function setAllExpanded(open) {
 }
 
 // ── 子課題詳細モーダル ────────────────────────────
+// モーダル本体（開閉・保存・実績入力パネル 'dw'）は child-modal.js が担い、
+// ChildModal.init() に findChild/onDataChanged を渡して連携する（起動処理を参照）。
 function findChild(childId) {
   for (const row of allData) {
     const c = row.children.find(k => k.id === childId);
@@ -842,191 +705,10 @@ function findChild(childId) {
   return null;
 }
 
-// 選択肢を <option> 文字列に変換。現在値(name一致)を選択状態にする
-function optionsHTML(items, currentName) {
-  return items.map(it =>
-    `<option value="${it.id}"${String(it.name) === String(currentName) ? ' selected' : ''}>${escHtml(it.name)}</option>`
-  ).join('');
-}
-
-function editFieldHTML(label, selectId, items, currentName) {
-  if (!items) {
-    // 選択肢が取れない場合は閲覧表示にフォールバック
-    return `<div class="m-field">
-      <span class="m-label">${label}</span>
-      <span class="m-value">${escHtml(currentName || '—')}</span>
-    </div>`;
-  }
-  return `<div class="m-field">
-    <span class="m-label">${label}</span>
-    <select class="m-select" id="${selectId}">${optionsHTML(items, currentName)}</select>
-  </div>`;
-}
-
-// 担当者選択肢を <option> 文字列に変換。現在値(id一致)を選択状態にする。先頭に「未割当」を含む
-function assigneeOptionsHTML(users, currentId) {
-  const none = currentId == null || currentId === '' ? ' selected' : '';
-  return `<option value=""${none}>未割当</option>` + users.map(u =>
-    `<option value="${u.id}"${String(u.id) === String(currentId) ? ' selected' : ''}>${escHtml(u.name)}</option>`
-  ).join('');
-}
-
-function openChildModal(childId) {
-  const found = findChild(childId);
-  if (!found) return;
-  const { child: c, parent: p } = found;
-  modalChildId = childId;
-
-  document.getElementById('mKey').textContent = c.id;
-  document.getElementById('mTitle').textContent = c.title;
-  document.getElementById('mLink').href = c.url;
-  setModalMsg('', '');
-
-  const progItems  = fieldOptions && fieldOptions.progress    ? fieldOptions.progress.items    : null;
-  const checkItems = fieldOptions && fieldOptions.checkStatus ? fieldOptions.checkStatus.items : null;
-
-  const diff = c.actualH - c.plannedH;
-  // 親案件・工数（閲覧専用。予定/実績/差分/残工数は工数入力後に refreshChildModalHours() で更新するため id を持たせる）
-  const readonly =
-    `<div class="m-field full">
-      <span class="m-label">親案件</span>
-      <span class="m-value">${escHtml(p.id)} ${escHtml(p.title)}</span>
-    </div>` +
-    [
-      ['予定工数', 'mPlannedH', c.plannedH + ' h'],
-      ['実績工数', 'mActualH', c.actualH + ' h'],
-      ['差分', 'mDiffH', (diff >= 0 ? '+' : '') + diff + ' h'],
-      ['残工数', 'mRemainingH', c.remainingH != null ? c.remainingH + ' h' : '—'],
-    ].map(([label, id, val]) =>
-      `<div class="m-field">
-        <span class="m-label">${label}</span>
-        <span class="m-value mono" id="${id}">${val}</span>
-      </div>`
-    ).join('') +
-    `<div class="m-field">
-      <span class="m-label">状態</span>
-      <span class="m-value">${escHtml(c.status || '—')}</span>
-    </div>`;
-
-  // 担当者（プルダウン取得済みなら編集可能、失敗時は閲覧表示にフォールバック）
-  const assigneeField = projectUsers
-    ? `<div class="m-field">
-        <span class="m-label">担当者</span>
-        <select class="m-select" id="mAssignee">${assigneeOptionsHTML(projectUsers, c.assigneeId)}</select>
-      </div>`
-    : `<div class="m-field">
-        <span class="m-label">担当者</span>
-        <span class="m-value">${escHtml(c.assignee || '未割当')}</span>
-      </div>`;
-
-  // 編集可能フィールド（開始日・期限日・進捗率・チェック状態）
-  const editable =
-    `<div class="m-field">
-      <span class="m-label">開始日</span>
-      <input type="date" class="m-select" id="mStart" value="${c.start || ''}">
-    </div>` +
-    `<div class="m-field">
-      <span class="m-label">期限日</span>
-      <input type="date" class="m-select" id="mDue" value="${c.due || ''}">
-    </div>` +
-    editFieldHTML('進捗率', 'mProgress', progItems, c.progress != null ? c.progress : '') +
-    editFieldHTML('チェック状態', 'mCheckStatus', checkItems, c.checkStatus || '');
-
-  document.getElementById('mGrid').innerHTML = assigneeField + readonly + editable;
-
-  // 変更検知用に初期値を保持
-  const progEl     = document.getElementById('mProgress');
-  const checkEl    = document.getElementById('mCheckStatus');
-  const assigneeEl = document.getElementById('mAssignee');
-  modalOriginal = {
-    progress:    progEl     ? progEl.value     : null,
-    checkStatus: checkEl    ? checkEl.value    : null,
-    assignee:    assigneeEl ? assigneeEl.value : null,
-    start:       c.start || '',
-    due:         c.due   || '',
-  };
-
-  document.getElementById('childModal').classList.add('open');
-  mountWorklogPanel('dw', childId);
-}
-
-function setModalMsg(text, cls) {
-  const el = document.getElementById('mMsg');
-  el.textContent = text;
-  el.className = 'm-msg' + (cls ? ' ' + cls : '');
-}
-
-async function saveChildEdits() {
-  if (!modalChildId) return;
-  const progEl     = document.getElementById('mProgress');
-  const checkEl    = document.getElementById('mCheckStatus');
-  const startEl    = document.getElementById('mStart');
-  const dueEl      = document.getElementById('mDue');
-  const assigneeEl = document.getElementById('mAssignee');
-  const payload = {};
-  // 変更があった項目だけを送る（同値だと Backlog が "No comment content" で弾くため）
-  if (progEl     && progEl.value     !== modalOriginal.progress)    payload.progressItemId    = parseInt(progEl.value, 10);
-  if (checkEl    && checkEl.value    !== modalOriginal.checkStatus) payload.checkStatusItemId = parseInt(checkEl.value, 10);
-  if (startEl    && startEl.value    !== modalOriginal.start)       payload.startDate = startEl.value;
-  if (dueEl      && dueEl.value      !== modalOriginal.due)         payload.dueDate   = dueEl.value;
-  // 担当者: 空文字は「未割当」へのクリア指示（Backlog 側の挙動を実課題で確認済み）
-  if (assigneeEl && assigneeEl.value !== modalOriginal.assignee)    payload.assigneeId = assigneeEl.value ? parseInt(assigneeEl.value, 10) : '';
-
-  if (Object.keys(payload).length === 0) {
-    setModalMsg('変更がありません', '');
-    return;
-  }
-
-  if (startEl && dueEl && startEl.value && dueEl.value && startEl.value > dueEl.value) {
-    setModalMsg('開始日が期限日より後になっています', 'err');
-    return;
-  }
-
-  const btn = document.getElementById('mSave');
-  btn.disabled = true;
-  setModalMsg('保存中...', '');
-  try {
-    const res = await fetch('/api/issue/' + encodeURIComponent(modalChildId), {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      let detail = `HTTP ${res.status}`;
-      try { const j = await res.json(); if (j.error) detail = j.error; } catch (e) {}
-      throw new Error(detail);
-    }
-    setModalMsg('保存しました', 'ok');
-    // 保存後の値を初期値として更新（連続保存での誤再送を防止）
-    if (progEl)     modalOriginal.progress    = progEl.value;
-    if (checkEl)    modalOriginal.checkStatus = checkEl.value;
-    if (startEl)    modalOriginal.start       = startEl.value;
-    if (dueEl)      modalOriginal.due         = dueEl.value;
-    if (assigneeEl) modalOriginal.assignee    = assigneeEl.value;
-    await fetchData(true);   // 背景テーブルを最新化
-  } catch (e) {
-    setModalMsg('保存失敗: ' + e.message, 'err');
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-function closeChildModal() {
-  modalChildId = null;
-  document.getElementById('childModal').classList.remove('open');
-}
-
-// ── 実績工数 日々入力レイヤー ─────────────────────
-// 独立モーダル(prefix 'w') と 子課題詳細モーダル内パネル(prefix 'dw') の二箇所から
-// 同じロジックを共用する。要素IDは `${prefix}Hours` のように prefix を前置して区別する。
+// ── 実績工数 独立モーダル(prefix 'w') ─────────────
+// 入力ロジック(mountWorklogPanel/addWorklog/deleteWorklog 等)は child-modal.js を共用し、
+// 対象子課題IDだけをこのページが worklogChildId で保持して ChildModal.init() 経由で渡す。
 let worklogChildId = null;                  // 独立モーダル(w)が対象とする子課題ID
-const WORKLOG_NAME_KEY = 'bpm2-worklog-name';
-const worklogRowsByPrefix = { w: [], dw: [] };   // 表示中の履歴（削除時の確認メッセージ用）
-
-// prefix が対象とする子課題IDを返す（'dw' は詳細モーダル、'w' は独立モーダル）
-function worklogTargetId(prefix) {
-  return prefix === 'dw' ? modalChildId : worklogChildId;
-}
 
 async function openWorklogModal(childId) {
   const found = findChild(childId);
@@ -1041,161 +723,13 @@ async function openWorklogModal(childId) {
   await mountWorklogPanel('w', childId);
 }
 
-// フォームを初期値にリセットし、入力履歴を読み込む（独立モーダル・詳細モーダル共通）
-async function mountWorklogPanel(prefix, childId) {
-  document.getElementById(prefix + 'Hours').value = '';
-  // 名前は前回入力をブラウザから復元
-  document.getElementById(prefix + 'Name').value = localStorage.getItem(WORKLOG_NAME_KEY) || '';
-  document.getElementById(prefix + 'Date').value = nowLocalDatetime();
-  setWorklogMsg(prefix, '', '');
-  document.getElementById(prefix + 'History').innerHTML = '<div class="w-hist-empty">読込中...</div>';
-  await loadWorklogHistory(prefix, childId);
-}
-
-function nowLocalDatetime() {
-  const d = new Date();
-  const pad = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function fmtDateTime(iso) {
-  const d = new Date(iso);
-  if (isNaN(d)) return iso;
-  return d.toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-}
-
-async function loadWorklogHistory(prefix, childId) {
-  const box = document.getElementById(prefix + 'History');
-  try {
-    const res = await fetch('/api/worklog/' + encodeURIComponent(childId));
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const rows = await res.json();
-    worklogRowsByPrefix[prefix] = rows;
-    if (!rows.length) {
-      box.innerHTML = '<div class="w-hist-empty">履歴はありません</div>';
-      return;
-    }
-    box.innerHTML = rows.map(r =>
-      `<div class="w-hist-row">
-        <span class="w-hist-name">${escHtml(r.name)}</span>
-        <span class="w-hist-date">${fmtDateTime(r.added_at)}</span>
-        <span class="w-hist-hours">+${r.hours}h</span>
-        <button class="w-hist-del" onclick="deleteWorklog('${prefix}',${r.id})" title="この履歴を削除" aria-label="削除">🗑</button>
-      </div>`
-    ).join('');
-  } catch (e) {
-    box.innerHTML = `<div class="w-hist-empty">履歴の取得に失敗しました (${escHtml(e.message)})</div>`;
-  }
-}
-
-async function deleteWorklog(prefix, entryId) {
-  const childId = worklogTargetId(prefix);
-  if (!childId) return;
-  const r = worklogRowsByPrefix[prefix].find(x => x.id === entryId);
-  if (!r) return;
-  const ok = confirm(
-    `この入力履歴を削除しますか？\n\n` +
-    `${r.name}  ${fmtDateTime(r.added_at)}  +${r.hours}h\n\n` +
-    `子課題の実績工数から ${r.hours}h 減算されます（0 未満になる場合は 0 になります）。`
-  );
-  if (!ok) return;
-
-  document.querySelectorAll(`#${prefix}History .w-hist-del`).forEach(b => b.disabled = true);
-  setWorklogMsg(prefix, '削除中...', '');
-  try {
-    const res = await fetch('/api/worklog/entry/' + entryId, { method: 'DELETE' });
-    if (!res.ok) {
-      let detail = `HTTP ${res.status}`;
-      try { const j = await res.json(); if (j.error) detail = j.error; } catch (e) {}
-      throw new Error(detail);
-    }
-    setWorklogMsg(prefix, '削除しました', 'ok');
-  } catch (e) {
-    setWorklogMsg(prefix, '削除失敗: ' + e.message, 'err');
-  } finally {
-    await loadWorklogHistory(prefix, childId);   // 成否に関わらず履歴を最新化（ボタンも再有効化）
-    await fetchData(true);                        // 背景テーブルを最新化
-    if (prefix === 'dw') refreshChildModalHours();
-  }
-}
-
-function setWorklogMsg(prefix, text, cls) {
-  const el = document.getElementById(prefix + 'Msg');
-  el.textContent = text;
-  el.className = 'm-msg' + (cls ? ' ' + cls : '');
-}
-
-async function addWorklog(prefix) {
-  const childId = worklogTargetId(prefix);
-  if (!childId) return;
-  const found = findChild(childId);
-  if (!found) return;
-  const { child: c, parent: p } = found;
-
-  const hoursRaw = document.getElementById(prefix + 'Hours').value.trim();
-  const name = document.getElementById(prefix + 'Name').value.trim();
-  const addedAt = document.getElementById(prefix + 'Date').value;
-
-  // 入力された名前はブラウザに保持（次回表示時に復元）
-  if (name) { try { localStorage.setItem(WORKLOG_NAME_KEY, name); } catch (e) {} }
-
-  // バリデーション: 全項目必須・追加工数は数値のみ
-  if (!hoursRaw && !name) { setWorklogMsg(prefix, '追加工数(h) と 名前 は必須です', 'err'); return; }
-  if (!name) { setWorklogMsg(prefix, '名前は必須です', 'err'); return; }
-  if (!hoursRaw) { setWorklogMsg(prefix, '追加工数(h) は必須です', 'err'); return; }
-  const hours = Number(hoursRaw);
-  if (!Number.isFinite(hours)) { setWorklogMsg(prefix, '追加工数(h) は数値で入力してください', 'err'); return; }
-  if (hours <= 0) { setWorklogMsg(prefix, '追加工数(h) は 0 より大きい数値で入力してください', 'err'); return; }
-  if (!addedAt) { setWorklogMsg(prefix, '日時は必須です', 'err'); return; }
-
-  const btn = document.getElementById(prefix + 'Add');
-  btn.disabled = true;
-  setWorklogMsg(prefix, '追加中...', '');
-  try {
-    const res = await fetch('/api/worklog/' + encodeURIComponent(childId), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hours, name, addedAt, parentKey: p.id, parentTitle: p.title }),
-    });
-    if (!res.ok) {
-      let detail = `HTTP ${res.status}`;
-      try { const j = await res.json(); if (j.error) detail = j.error; } catch (e) {}
-      throw new Error(detail);
-    }
-    setWorklogMsg(prefix, '追加しました', 'ok');
-    document.getElementById(prefix + 'Hours').value = '';
-    document.getElementById(prefix + 'Date').value = nowLocalDatetime();
-    await loadWorklogHistory(prefix, childId);   // 履歴更新
-    await fetchData(true);                        // 背景テーブルを最新化
-    if (prefix === 'dw') refreshChildModalHours();
-  } catch (e) {
-    setWorklogMsg(prefix, '追加失敗: ' + e.message, 'err');
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-// 工数入力後、詳細モーダル内の予定/実績/差分/残工数だけを更新する
-// （モーダル全体を再描画すると編集中の進捗率・日付が失われるため、対象要素のみ差し替える）
-function refreshChildModalHours() {
-  if (!modalChildId) return;
-  const found = findChild(modalChildId);
-  if (!found) return;
-  const { child: c } = found;
-  const diff = c.actualH - c.plannedH;
-  document.getElementById('mPlannedH').textContent   = c.plannedH + ' h';
-  document.getElementById('mActualH').textContent    = c.actualH + ' h';
-  document.getElementById('mDiffH').textContent      = (diff >= 0 ? '+' : '') + diff + ' h';
-  document.getElementById('mRemainingH').textContent = c.remainingH != null ? c.remainingH + ' h' : '—';
-}
-
 function closeWorklogModal() {
   worklogChildId = null;
   document.getElementById('worklogModal').classList.remove('open');
 }
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeChildModal(); closeWorklogModal(); }
+  if (e.key === 'Escape') closeWorklogModal();
 });
 
 // ── フィルター ────────────────────────────────────
@@ -1310,8 +844,11 @@ function applyTheme(theme) {
 applyTheme(localStorage.getItem('bpm2-theme') || 'dark');
 loadFilter();
 applyFilterUI();
-loadFieldOptions();
-loadProjectUsers();
+ChildModal.init({
+  findChild,
+  onDataChanged: () => fetchData(true),
+  getStandaloneWorklogId: () => worklogChildId,
+});
 fetchData();
 </script>
 </body>
