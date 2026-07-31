@@ -503,7 +503,7 @@
   <!-- ── 7. ガントチャート ── -->
   <section id="s7">
     <h2 class="sec">7. ガントチャートで期間を俯瞰する</h2>
-    <p>ヘッダーの <b>「📅 ガント」</b> から、案件・子課題の期間をタイムライン上のバーで俯瞰できる画面を開けます。一覧画面と同じデータ（同じ約60秒ごとの自動更新）を使う<b>閲覧専用</b>の画面です。</p>
+    <p>ヘッダーの <b>「📅 ガント」</b> から、案件・子課題の期間をタイムライン上のバーで俯瞰できる画面を開けます。一覧画面と同じデータ（同じ約60秒ごとの自動更新）を使い、<b>「📋 案件別」</b>（親案件ごとの階層表示）と<b>「👤 担当者別」</b>（担当者ごとに子課題だけを並べる表示）を切り替えられます。</p>
 
     <div class="screen">
       <div class="screen-bar"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span><span class="screen-url">http://localhost:3031/gantt.html</span></div>
@@ -569,8 +569,50 @@
       <li><b>今日ライン</b>：縦の青い線が今日の日付です。</li>
       <li><b>階層表示</b>：左側の <b>▶</b> で子課題の開閉、「全て開く／全て閉じる」で一括操作できます（一覧画面と同じ）。</li>
       <li><b>フィルター</b>：健全性・状態・担当者・ステータスは一覧画面と共通で、設定内容もブラウザに保存され両画面で共有されます。</li>
-      <li><b>バーやタイトルのクリック</b>：該当の課題を Backlog の新しいタブで開きます。バーにマウスを乗せると、期間・工数・進捗などの詳細がツールチップで表示されます。</li>
-      <li><b>編集不可</b>：ガント画面はあくまで俯瞰用の閲覧画面です。日程や進捗の変更は、一覧画面の詳細レイヤー（→ 4章）から行ってください。</li>
+      <li><b>バーや課題番号のクリック</b>：該当の課題を Backlog の新しいタブで開きます。バーにマウスを乗せると、期間・工数・進捗などの詳細がツールチップで表示されます。</li>
+      <li><b>子課題の詳細を編集する</b>：子課題のタイトル（点線下線）をクリックすると、一覧画面と同じ詳細レイヤー（→ 4章）が開き、担当者・進捗率・日程・実績工数をその場で編集できます。バー自体をドラッグして日程を変えることはできません。</li>
+    </ul>
+
+    <h3>担当者別ビューで個人のスケジュールを見る</h3>
+    <p>「👤 担当者別」ビューに切り替えると、親案件の行は表示されず、<b>担当者ごとに子課題だけがグルーピング</b>されて並びます。誰にどれだけタスクが割り当たっているか、期間に空きがないかを一人ずつ確認できます。</p>
+
+    <div class="screen">
+      <div class="screen-bar"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span><span class="screen-url">http://localhost:3031/gantt.html</span></div>
+      <div class="screen-body">
+        <div class="filter-bar">
+          <span class="filter-label">ビュー <span class="marker">5</span></span>
+          <span class="chip">📋 案件別</span><span class="chip active">👤 担当者別</span>
+          <span class="filter-sep"></span>
+          <span class="filter-label">担当者 <span class="marker">6</span></span>
+          <span class="select-filter">👥 担当者: 2名 ▾</span>
+        </div>
+        <div class="gm-body">
+          <div class="gm-axis"><span></span><span>6/22</span><span>6/29</span><span>7/6</span><span>7/13</span><span>7/20</span></div>
+          <div class="gm-row" style="background:var(--bg3)">
+            <div class="gm-label">▶ 👤 佐藤 <span class="count-badge">2</span></div>
+            <div class="gm-track" style="background:none"></div>
+          </div>
+          <div class="gm-row child">
+            <div class="gm-label"><span class="issue-key">V2A9-1706</span><span class="issue-key" style="color:var(--text3);font-size:10px">[V2A9-1652]</span><span class="issue-title-child">出力バッチの実装</span></div>
+            <div class="gm-track"><div class="gm-bar g" style="left:25%;width:30%"><div class="gm-bar-fill" style="width:90%"></div></div></div>
+          </div>
+          <div class="gm-row" style="background:var(--bg3)">
+            <div class="gm-label">▶ 👤 未割当 <span class="count-badge">3</span></div>
+            <div class="gm-track" style="background:none"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="marker">5</span><span><b>ビュー切替</b>：「📋 案件別」（従来どおり）と「👤 担当者別」を切り替えます。担当者別ビューでは親案件行は出ず、子課題のタイトル横に <code>[V2A9-1652]</code> のように親案件のキーが小さく表示されます。</span></li>
+      <li><span class="marker">6</span><span><b>担当者の複数選択</b>：担当者別ビューでは、担当者を複数チェックして絞り込めます（例：自分のチームのメンバーだけ表示）。選択状態はブラウザに保存され、次回も同じメンバーで表示されます。「未割当」グループは一番下に固定表示されます。</span></li>
+    </ol>
+    <ul class="notes">
+      <li><b>グループの開閉</b>：担当者名の左の <b>▶</b> で開閉できます。「全て開く／全て閉じる」も担当者単位で効きます。</li>
+      <li><b>グループヘッダの表示</b>：担当者名の横に、表示中の子課題数と予定/実績工数の合計（計 ○h/○h）が表示されます。</li>
+      <li><b>空きの見つけ方</b>：一人の担当者の行を縦に見て、バーが途切れている期間が空きです。タスクが1件も無い担当者はグループ自体が表示されません（プロジェクトに無関係な参加者も多く登録されているため、あえて0件表示はしていません）。</li>
+      <li><b>フィルターの引き継ぎ</b>：健全性・状態・「処理済み・完了を隠す」・ステータス・粒度・日付なしを隠す、は案件別ビューと共通の設定がそのまま適用されます（ステータスは子課題の親案件のフェーズで判定します）。</li>
     </ul>
   </section>
 
@@ -578,6 +620,14 @@
   <section id="s8">
     <h2 class="sec">8. リリースノート</h2>
     <p class="lead">機能追加・変更の履歴です。新しいものが上に並びます。</p>
+
+    <h3>2026-07-31</h3>
+    <ul class="notes">
+      <li><b>ガントチャートに担当者別ビューを追加しました</b>（→ <a href="#s7" style="color:var(--accent)">7章</a>）。<br>
+        「👤 担当者別」に切り替えると、親案件行を出さずに担当者ごとに子課題だけをグルーピングして表示します。担当者を複数選択して絞り込むこともでき（選択はブラウザに保存）、チームリーダーが自チームのメンバーだけを表示するといった使い方ができます。</li>
+      <li><b>ガントチャートの子課題タイトルから詳細レイヤーを開けるようになりました</b>（→ <a href="#s4" style="color:var(--accent)">4章</a>）。<br>
+        案件別・担当者別どちらのビューでも、子課題のタイトルをクリックすると一覧画面と同じ詳細レイヤーが開き、担当者・実績工数などをその場で編集できます。</li>
+    </ul>
 
     <h3>2026-07-30</h3>
     <ul class="notes">
