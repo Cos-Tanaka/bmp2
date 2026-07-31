@@ -214,6 +214,34 @@
   }
   .grow.is-child .assignee-tag { color: var(--text3); }
 
+  /* 担当者別ビュー: グループヘッダ行・子課題の親案件キー表示 */
+  .grow.is-group .gcell-left { background: var(--bg3); font-weight: 500; }
+  .grow.is-group:hover .gcell-left { background: var(--bg3); }
+  .group-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .parent-ref { color: var(--text3); font-weight: 400; font-size: 10px; }
+
+  /* 担当者別ビュー: 複数選択フィルタ */
+  .assignee-multi { position: relative; }
+  .assignee-multi-panel {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 50; display: none;
+    background: var(--bg2); border: 1px solid var(--border2); border-radius: 8px;
+    padding: 6px; min-width: 200px; max-height: 320px; overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,.35);
+  }
+  .assignee-multi-panel.open { display: block; }
+  .assignee-multi-actions {
+    display: flex; justify-content: flex-end; padding: 0 4px 6px;
+    border-bottom: 1px solid var(--border); margin-bottom: 6px;
+  }
+  .assignee-multi-actions button {
+    background: none; border: none; color: var(--accent); font-size: 11px; cursor: pointer; padding: 0;
+  }
+  .assignee-multi-panel label {
+    display: flex; align-items: center; gap: 6px; padding: 3px 4px;
+    font-size: 12px; color: var(--text); cursor: pointer; border-radius: 4px; white-space: nowrap;
+  }
+  .assignee-multi-panel label:hover { background: var(--bg3); }
+
   /* ツールチップ */
   .gtip {
     position: fixed; z-index: 500; display: none; max-width: 320px;
@@ -237,6 +265,7 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>
+<link rel="stylesheet" href="child-modal.css">
 </head>
 <body>
 
@@ -270,6 +299,10 @@
   <select class="select-filter" id="assigneeFilter" onchange="setAssigneeFilter(this.value)">
     <option value="all">すべて</option>
   </select>
+  <div class="assignee-multi" id="assigneeMultiWrap" style="display:none">
+    <button class="select-filter" id="assigneeMultiBtn" type="button" onclick="toggleAssigneeMultiPanel(event)">👥 担当者: 全員</button>
+    <div class="assignee-multi-panel" id="assigneeMultiPanel"></div>
+  </div>
   <div class="filter-sep"></div>
   <span class="filter-label">ステータス</span>
   <button class="chip" data-f="customStatus" data-v="all">すべて</button>
@@ -282,6 +315,10 @@
 </div>
 
 <div class="filter-bar" style="border-top:none">
+  <span class="filter-label">ビュー</span>
+  <button class="chip" data-mode="project">📋 案件別</button>
+  <button class="chip" data-mode="assignee">👤 担当者別</button>
+  <div class="filter-sep"></div>
   <span class="filter-label">粒度</span>
   <button class="chip" data-scale="day">日</button>
   <button class="chip" data-scale="week">週</button>
@@ -313,10 +350,12 @@
 
 <div class="gtip" id="gtip"></div>
 
+<script src="child-modal.js"></script>
 <script>
 // ── 状態 ──────────────────────────────────────────
 let allData = [];
-let expanded = new Set();          // 展開中の親案件 ID
+let expanded = new Set();          // 展開中の親案件 ID（案件別ビュー）
+let collapsedGroups = new Set();   // 閉じた担当者グループのキー（担当者別ビュー・既定は全開）
 let axis = null;                   // 現在の時間軸モデル
 let filter = { health: 'all', status: null, assignee: 'all', customStatus: 'all', childSort: 'assignee-date', hideDone: false };
 let scale = 'week';
@@ -327,10 +366,16 @@ const isDoneStatus = x => DONE_STATUS_IDS.includes(x.statusId);
 let hideUndated = true;            // 日付が引けない行を隠す（Backlog 側で未設定の課題が多いため既定 ON）
 let didInitialScroll = false;
 
+let viewMode = 'project';                  // 'project'（案件別） | 'assignee'（担当者別）
+let selectedAssignees = [];                // 担当者別ビューの複数選択フィルタ。空 = 全員。要素は assigneeId(数値) または 'unassigned'
+let projectUsersCache = [];                // 複数選択フィルタの候補 [{id, name}]（/api/project-users）
+
 const POLL_MS    = 60000;          // 60秒ポーリング（index.html と同じ）
 const FILTER_KEY = 'bpm2-filter';  // index.html とフィルタ状態を共有
 const SCALE_KEY  = 'bpm2-gantt-scale';
 const HIDE_KEY   = 'bpm2-gantt-hide-undated';
+const MODE_KEY   = 'bpm2-gantt-mode';
+const ASSIGNEE_MULTI_KEY = 'bpm2-gantt-assignees';
 const LEFT_W     = 340;            // 左ペイン幅(px)
 const SCALES = {
   day:   { colW: 32, padUnits: 5 },
@@ -354,6 +399,12 @@ function loadFilter() {
   if (s && SCALES[s]) scale = s;
   const h = localStorage.getItem(HIDE_KEY);
   if (h !== null) hideUndated = h === '1';
+  const vm = localStorage.getItem(MODE_KEY);
+  if (vm === 'project' || vm === 'assignee') viewMode = vm;
+  try {
+    const savedAssignees = JSON.parse(localStorage.getItem(ASSIGNEE_MULTI_KEY) || '[]');
+    if (Array.isArray(savedAssignees)) selectedAssignees = savedAssignees;
+  } catch (e) {}
 }
 
 // 保存されたフィルタ・粒度を UI コントロールへ反映
@@ -367,6 +418,7 @@ function applyFilterUI() {
   document.getElementById('chipHideUndated').classList.toggle('active', hideUndated);
   const hideDoneChip = document.getElementById('chipHideDone');
   if (hideDoneChip) hideDoneChip.classList.toggle('active', filter.hideDone);
+  updateModeUI();
 }
 
 // ── API 取得 ──────────────────────────────────────
@@ -386,6 +438,14 @@ async function fetchData(force = false) {
     setSyncState('error', e.message);
     if (!allData.length) showState('⚠', 'データの取得に失敗しました', e.message);
   }
+}
+
+// 担当者別ビューの複数選択フィルタの候補用（1h キャッシュ付き API のため負荷は無視できる）
+async function loadProjectUsersForFilter() {
+  try {
+    const res = await fetch('/api/project-users');
+    if (res.ok) projectUsersCache = await res.json();
+  } catch (e) { /* 取得失敗時は allData 側の担当者のみを候補にする */ }
 }
 
 function setSyncState(state, msg = '') {
@@ -500,6 +560,65 @@ function visibleRows() {
     if (filter.hideDone) children = children.filter(c => !isDoneStatus(c));
     return { parent: row, children, range, autoExpand: assigneeActive && children.length > 0 };
   }).filter(r => !hideUndated || r.range);
+}
+
+/**
+ * 担当者別ビューの行データ。
+ * 全親の children をフラット化し、フィルタ適用後に assigneeId でグループ化して返す。
+ * 各グループの children には親への参照（.parent）を付ける（左ペインの親キー表示・ツールチップ用）。
+ * カスタムステータスは子課題自身が持たないため、親案件の customStatus で判定する（継承）。
+ * グループは名前の五十音順。未割当（assigneeId が無い）は常に末尾。
+ * グループ内は開始日昇順（同日は課題キー順）。課題が 1 件も残らない担当者はグループごと出さない。
+ */
+function visibleAssigneeGroups() {
+  const bucket = new Map();   // key: assigneeId(数値) または 'unassigned'
+  for (const row of allData) {
+    if (!matchCustomStatus(row)) continue;
+    for (const c of row.children) {
+      if (filter.health !== 'all' && childHealth(c) !== filter.health) continue;
+      if (filter.status === 'done' && !isDoneStatus(c)) continue;
+      if (filter.status === 'wip'  &&  isDoneStatus(c)) continue;
+      if (filter.hideDone && isDoneStatus(c)) continue;
+      if (hideUndated && !resolveRange(c, 'child')) continue;
+      const idKey = c.assigneeId ?? 'unassigned';
+      if (selectedAssignees.length && !selectedAssignees.includes(idKey)) continue;
+      if (!bucket.has(idKey)) {
+        bucket.set(idKey, {
+          key: 'a:' + idKey,
+          assigneeId: c.assigneeId ?? null,
+          name: c.assignee || '未割当',
+          children: [],
+        });
+      }
+      bucket.get(idKey).children.push(Object.assign({}, c, { parent: row }));
+    }
+  }
+  const groups = [...bucket.values()];
+  groups.sort((a, b) => {
+    const aUn = a.assigneeId == null, bUn = b.assigneeId == null;
+    if (aUn !== bUn) return aUn ? 1 : -1;
+    return a.name.localeCompare(b.name, 'ja');
+  });
+  for (const g of groups) {
+    g.children.sort((a, b) => {
+      const sa = a.start || '9999-12-31', sb = b.start || '9999-12-31';
+      if (sa !== sb) return sa.localeCompare(sb);
+      return a.id.localeCompare(b.id);
+    });
+  }
+  return groups;
+}
+
+/** 複数選択フィルタの候補一覧。/api/project-users と実データ上の担当者の和集合（五十音順）。未割当は含まない（別枠で表示）*/
+function getAssigneeCandidates() {
+  const map = new Map();
+  (projectUsersCache || []).forEach(u => map.set(u.id, u.name));
+  allData.forEach(row => row.children.forEach(c => {
+    if (c.assigneeId != null && !map.has(c.assigneeId)) map.set(c.assigneeId, c.assignee);
+  }));
+  return [...map.entries()]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ja'));
 }
 
 /** 子課題のソート（index.html の childSort 設定を踏襲）*/
@@ -638,6 +757,7 @@ function planProgressOf(s, d) {
 
 // ── 描画 ──────────────────────────────────────────
 function renderGantt() {
+  if (viewMode === 'assignee') { renderAssigneeGantt(); return; }
   const rows = visibleRows();
   const scroll = document.getElementById('ganttScroll');
   const prevScrollLeft = scroll.scrollLeft;
@@ -708,9 +828,89 @@ function renderGantt() {
         <div class="gcell-left" style="width:${LEFT_W}px">
           <span class="toggle-spacer"></span>
           <a href="${escAttr(c.url)}" target="_blank" rel="noopener" class="issue-key">${escHtml(c.id)}</a>
-          <span class="issue-title" title="${escAttr(c.title)}">${escHtml(c.title)}</span>
+          <span class="issue-title" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px" onclick="openChildModal('${escAttr(c.id)}')" title="詳細を表示">${escHtml(c.title)}</span>
           ${cBar ? '' : '<span class="no-date">日付未設定</span>'}
           <span class="assignee-tag" title="${escAttr(c.assignee || '未割当')}">${escHtml(c.assignee || '未割当')}</span>
+        </div>
+        <div class="gtrack" style="width:${axis.width}px">${cBar}</div>
+      </div>`;
+    }
+  }
+  body.innerHTML = html;
+
+  if (!didInitialScroll) { didInitialScroll = true; scrollToToday(); }
+  else { scroll.scrollLeft = prevScrollLeft; scroll.scrollTop = prevScrollTop; }
+}
+
+/** 担当者別ビューの描画。親課題行は出さず、担当者グループ＋子課題行のみで構成する。 */
+function renderAssigneeGantt() {
+  const groups = visibleAssigneeGroups();
+  const scroll = document.getElementById('ganttScroll');
+  const prevScrollLeft = scroll.scrollLeft;
+  const prevScrollTop  = scroll.scrollTop;
+
+  if (!groups.length) { showState('🔍', '該当する課題がありません'); return; }
+
+  document.getElementById('ganttState').style.display = 'none';
+  document.getElementById('ganttCanvas').style.display = '';
+
+  // buildAxis は { range, children } の配列を期待する。グループは range を持たないため null を渡す（null 安全）。
+  axis = buildAxis(groups.map(g => ({ range: null, children: g.children })));
+  const totalW = LEFT_W + axis.width;
+  const head = document.getElementById('ganttHead');
+  const body = document.getElementById('ganttRows');
+  head.style.width = body.style.width = totalW + 'px';
+
+  const childCount = groups.reduce((s, g) => s + g.children.length, 0);
+  updateHideChipLabel();
+  head.innerHTML =
+    `<div class="gcell-left" style="width:${LEFT_W}px">担当者 / 課題
+       <span class="head-count">${groups.length} 名 / ${childCount} 課題</span>
+     </div>` +
+    `<div class="gtrack" style="width:${axis.width}px">
+       <div class="gt-groups">${axis.groups.map(g =>
+         `<div class="gt-group" style="left:${g.x}px;width:${g.w}px"><span>${g.label}</span></div>`).join('')}
+         ${axis.todayX != null ? `<div class="gt-today-flag" style="left:${axis.todayX}px"><span>今日</span></div>` : ''}
+       </div>
+       <div class="gt-cols">${axis.cols.map(c =>
+         `<div class="gt-col${c.weekend ? ' weekend' : ''}${c.isToday ? ' today' : ''}" style="left:${c.x}px;width:${c.w}px">` +
+         `${c.label}${c.sub ? `<small>${c.sub}</small>` : ''}</div>`).join('')}
+       </div>
+     </div>`;
+
+  // 背景（グリッド・週末・今日ライン）は行の下に 1 枚だけ敷く
+  let html = `<div class="gantt-bg" style="left:${LEFT_W}px;width:${axis.width}px">` +
+    axis.cols.map(c =>
+      `<div class="gcol${c.weekend ? ' weekend' : ''}${c.boundary ? ' month-start' : ''}" style="left:${c.x}px;width:${c.w}px"></div>`).join('') +
+    (axis.todayX != null ? `<div class="gtoday" style="left:${axis.todayX}px"></div>` : '') +
+    `</div>`;
+
+  for (const g of groups) {
+    const isOpen = !collapsedGroups.has(g.key);
+    const totalPlanned = g.children.reduce((s, c) => s + c.plannedH, 0);
+    const totalActual  = g.children.reduce((s, c) => s + c.actualH, 0);
+    const label = g.assigneeId == null ? '未割当' : g.name;
+
+    html += `<div class="grow is-group">
+      <div class="gcell-left" style="width:${LEFT_W}px">
+        <button class="toggle-btn${isOpen ? ' open' : ''}" onclick="toggleGroup('${escAttr(g.key)}')" aria-label="展開">▶</button>
+        <span class="group-name">👤 ${escHtml(label)}</span>
+        <span class="count-badge">${g.children.length}</span>
+        <span class="assignee-tag" style="max-width:none">計 ${totalPlanned}h/${totalActual}h</span>
+      </div>
+      <div class="gtrack" style="width:${axis.width}px"></div>
+    </div>`;
+
+    if (!isOpen) continue;
+    for (const c of g.children) {
+      const cBar = barCell(c, 'child');
+      html += `<div class="grow is-child">
+        <div class="gcell-left" style="width:${LEFT_W}px">
+          <span class="toggle-spacer"></span>
+          <a href="${escAttr(c.url)}" target="_blank" rel="noopener" class="issue-key">${escHtml(c.id)}</a>
+          <a href="${escAttr(c.parent.url)}" target="_blank" rel="noopener" class="issue-key parent-ref" title="${escAttr(c.parent.title)}">[${escHtml(c.parent.id)}]</a>
+          <span class="issue-title" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px" onclick="openChildModal('${escAttr(c.id)}')" title="詳細を表示">${escHtml(c.title)}</span>
+          ${cBar ? '' : '<span class="no-date">日付未設定</span>'}
         </div>
         <div class="gtrack" style="width:${axis.width}px">${cBar}</div>
       </div>`;
@@ -760,6 +960,12 @@ function toggleRow(id) {
   renderGantt();
 }
 
+/** 担当者別ビューのグループ開閉（既定は全開。閉じたものだけ collapsedGroups に記録） */
+function toggleGroup(key) {
+  if (collapsedGroups.has(key)) collapsedGroups.delete(key); else collapsedGroups.add(key);
+  renderGantt();
+}
+
 /** バークリックで該当課題を Backlog で開く */
 function openIssue(id) {
   const found = findItem(id);
@@ -767,7 +973,11 @@ function openIssue(id) {
 }
 
 function setAllExpanded(open) {
-  expanded = open ? new Set(visibleRows().map(r => r.parent.id)) : new Set();
+  if (viewMode === 'assignee') {
+    collapsedGroups = open ? new Set() : new Set(visibleAssigneeGroups().map(g => g.key));
+  } else {
+    expanded = open ? new Set(visibleRows().map(r => r.parent.id)) : new Set();
+  }
   renderGantt();
 }
 
@@ -785,8 +995,13 @@ function updateHideChipLabel() {
     n ? `日付なしを隠す (${n})` : '日付なしを隠す';
 }
 
-/** 「日付なしを隠す」で除外された親案件・子課題の合計件数 */
+/** 「日付なしを隠す」で除外された件数。担当者別ビューでは子課題のみを数える。 */
 function countUndated() {
+  if (viewMode === 'assignee') {
+    let n = 0;
+    for (const row of allData) n += row.children.filter(c => !resolveRange(c, 'child')).length;
+    return n;
+  }
   let n = 0;
   for (const row of allData) {
     if (!resolveRange(row, 'parent')) { n += 1 + row.children.length; continue; }
@@ -920,6 +1135,81 @@ function updateAssigneeFilter() {
   else { filter.assignee = 'all'; select.value = 'all'; }
 }
 
+// ── 表示モード（案件別 / 担当者別）────────────────
+function setViewMode(mode) {
+  if (viewMode === mode) return;
+  viewMode = mode;
+  try { localStorage.setItem(MODE_KEY, mode); } catch (e) {}
+  updateModeUI();
+  renderGantt();
+  scrollToToday();
+}
+
+/** モードに応じて担当者フィルタ（単一選択/複数選択）の表示切替とモードチップの active 状態を反映 */
+function updateModeUI() {
+  document.querySelectorAll('.chip[data-mode]').forEach(c => c.classList.toggle('active', c.dataset.mode === viewMode));
+  const single = document.getElementById('assigneeFilter');
+  const multiWrap = document.getElementById('assigneeMultiWrap');
+  if (single) single.style.display = viewMode === 'assignee' ? 'none' : '';
+  if (multiWrap) multiWrap.style.display = viewMode === 'assignee' ? '' : 'none';
+  updateAssigneeMultiBtnLabel();
+}
+
+// ── 担当者 複数選択フィルタ（担当者別ビュー専用）──
+function toggleAssigneeMultiPanel(ev) {
+  ev.stopPropagation();
+  const panel = document.getElementById('assigneeMultiPanel');
+  const willOpen = !panel.classList.contains('open');
+  if (willOpen) renderAssigneeMultiPanel();
+  panel.classList.toggle('open', willOpen);
+}
+
+document.addEventListener('click', (ev) => {
+  const wrap = document.getElementById('assigneeMultiWrap');
+  if (wrap && !wrap.contains(ev.target)) {
+    document.getElementById('assigneeMultiPanel').classList.remove('open');
+  }
+});
+
+function renderAssigneeMultiPanel() {
+  const panel = document.getElementById('assigneeMultiPanel');
+  const candidates = getAssigneeCandidates();
+  const isChecked = (val) => selectedAssignees.includes(val);
+  let html = `<div class="assignee-multi-actions">
+      <button type="button" onclick="clearAssigneeMulti()">全解除</button>
+    </div>`;
+  html += candidates.map(u =>
+    `<label><input type="checkbox" ${isChecked(u.id) ? 'checked' : ''} onchange="toggleAssigneeMultiValue(${u.id}, this.checked)"> ${escHtml(u.name)}</label>`
+  ).join('');
+  html += `<label><input type="checkbox" ${isChecked('unassigned') ? 'checked' : ''} onchange="toggleAssigneeMultiValue('unassigned', this.checked)"> 未割当</label>`;
+  panel.innerHTML = html;
+}
+
+function toggleAssigneeMultiValue(val, checked) {
+  if (checked) {
+    if (!selectedAssignees.includes(val)) selectedAssignees.push(val);
+  } else {
+    selectedAssignees = selectedAssignees.filter(v => v !== val);
+  }
+  try { localStorage.setItem(ASSIGNEE_MULTI_KEY, JSON.stringify(selectedAssignees)); } catch (e) {}
+  updateAssigneeMultiBtnLabel();
+  renderGantt();
+}
+
+function clearAssigneeMulti() {
+  selectedAssignees = [];
+  try { localStorage.setItem(ASSIGNEE_MULTI_KEY, JSON.stringify(selectedAssignees)); } catch (e) {}
+  renderAssigneeMultiPanel();
+  updateAssigneeMultiBtnLabel();
+  renderGantt();
+}
+
+function updateAssigneeMultiBtnLabel() {
+  const btn = document.getElementById('assigneeMultiBtn');
+  if (!btn) return;
+  btn.textContent = selectedAssignees.length ? `👥 担当者: ${selectedAssignees.length}名` : '👥 担当者: 全員';
+}
+
 function setScale(val, btn) {
   scale = val;
   document.querySelectorAll('.chip[data-scale]').forEach(c => c.classList.toggle('active', c === btn));
@@ -938,6 +1228,9 @@ document.querySelectorAll('.chip[data-f]').forEach(btn => {
 });
 document.querySelectorAll('.chip[data-scale]').forEach(btn => {
   btn.addEventListener('click', () => setScale(btn.dataset.scale, btn));
+});
+document.querySelectorAll('.chip[data-mode]').forEach(btn => {
+  btn.addEventListener('click', () => setViewMode(btn.dataset.mode));
 });
 
 // ── ユーティリティ ────────────────────────────────
@@ -969,6 +1262,14 @@ function toggleTheme() {
 applyTheme(localStorage.getItem('bpm2-theme') || 'dark');
 loadFilter();
 applyFilterUI();
+loadProjectUsersForFilter();
+ChildModal.init({
+  findChild: (id) => {
+    const f = findItem(id);
+    return f && f.kind === 'child' ? { child: f.item, parent: f.parent } : null;
+  },
+  onDataChanged: () => fetchData(true),
+});
 fetchData();
 setInterval(() => fetchData(), POLL_MS);
 </script>
