@@ -50,6 +50,21 @@ _snapshot: dict = {"data": None, "ts": 0.0}
 _snapshot_lock  = threading.Lock()   # _snapshot の読み書き保護（短時間）
 _refresh_lock   = threading.Lock()   # 同時多重取得を防ぐ（Backlog取得中は 1 本に絞る）
 
+# ── スナップショットの局所更新用 生データ ─────────────
+# build_response() の入力（親・子の生 JSON とカスタム属性のフィールドID）をそのまま保持する。
+# 1 課題だけの更新（実績工数の入力、モーダルからの編集）は、この生データの該当課題を
+# 差し替えて build_response() を回し直すだけで済むため、Backlog 全件取得(~20秒) が要らない。
+# 集計・health の計算式は build_response()/format_issue() を再利用するので二重実装にならない。
+# 生データはメモリのみ（ディスクには整形後のスナップショットだけを永続化する）。
+_raw: dict = {"parents": None, "children_map": None, "field_ids": None}
+_raw_lock  = threading.Lock()
+
+# 全件取得の実行中に更新された課題を、取得結果へ取り込み直すためのバッファ。
+# 全件取得は ~20 秒かかるので、その最中の更新は「取得済みの古い値」で上書きされ得る。
+# 取得開始後に更新された課題はここから復元し、入力した値が一瞬巻き戻るのを防ぐ。
+_recent_patches: dict = {}            # {issueKey: (更新時刻, 課題JSON)}
+_RECENT_PATCH_TTL = 300               # 秒。これより古い記録は破棄する
+
 
 def _save_snapshot(data: list, ts: float) -> None:
     """スナップショットをディスクへアトミックに保存する。"""
@@ -80,6 +95,49 @@ def _load_snapshot() -> None:
         log.exception("Failed to load issues snapshot")
 
 
+def _publish_snapshot(data: list) -> float:
+    """整形済み一覧をスナップショット（メモリ＋ディスク）として公開する。"""
+    ts = time.time()
+    with _snapshot_lock:
+        _snapshot["data"] = data
+        _snapshot["ts"]   = ts
+    _save_snapshot(data, ts)
+    return ts
+
+
+def _rebuild_locked() -> list:
+    """_raw_lock 取得済みの前提で、生データからフロント向け一覧を組み立て直す。"""
+    return build_response(_raw["parents"], _raw["children_map"], *_raw["field_ids"])
+
+
+def _replace_issue(parents: list, children_map: dict, issue: dict) -> bool:
+    """生データ内の同一 issueKey の課題を差し替える。見つからなければ False。"""
+    key = issue.get("issueKey")
+    for kids in children_map.values():
+        for i, c in enumerate(kids):
+            if c.get("issueKey") == key:
+                kids[i] = issue
+                return True
+    # 親側。親一覧は「種別=00.案件 かつ 状態≠完了」で絞り込み済みのため、
+    # 条件から外れる更新（完了化など）が一覧から消えるのは次の全件更新時になる。
+    for i, p in enumerate(parents):
+        if p.get("issueKey") == key:
+            parents[i] = issue
+            return True
+    return False
+
+
+def _merge_recent_patches(parents: list, children_map: dict, since: float) -> None:
+    """全件取得の開始後に更新された課題を、取得結果へ復元する。ついでに古い記録を捨てる。"""
+    cutoff = time.time() - _RECENT_PATCH_TTL
+    for key, (ts, issue) in list(_recent_patches.items()):
+        if ts < cutoff:
+            _recent_patches.pop(key, None)
+            continue
+        if ts >= since:
+            _replace_issue(parents, children_map, issue)
+
+
 def refresh_snapshot() -> list:
     """Backlog から最新を取得してスナップショット（メモリ＋ディスク）を更新する。
 
@@ -88,14 +146,63 @@ def refresh_snapshot() -> list:
     """
     with _refresh_lock:
         started = time.time()
-        data = _fetch_and_build()
-        ts = time.time()
-        with _snapshot_lock:
-            _snapshot["data"] = data
-            _snapshot["ts"]   = ts
-        _save_snapshot(data, ts)
+        parents, children_map, field_ids = _fetch_raw()
+        with _raw_lock:
+            _merge_recent_patches(parents, children_map, started)
+            _raw["parents"]      = parents
+            _raw["children_map"] = children_map
+            _raw["field_ids"]    = field_ids
+            data = _rebuild_locked()
+            # 公開まで _raw_lock を握ったままにして、局所更新との公開順が入れ替わらないようにする
+            ts = _publish_snapshot(data)
         log.info("Snapshot refreshed in %.1fs (%d parents)", ts - started, len(data))
         return data
+
+
+def refresh_snapshot_async() -> None:
+    """全件更新をバックグラウンドで走らせる（呼び出し元のレスポンスを待たせない）。"""
+    def run():
+        try:
+            refresh_snapshot()
+        except Exception:
+            log.exception("Async snapshot refresh failed")
+    threading.Thread(target=run, name="snapshot-refresh-async", daemon=True).start()
+
+
+def apply_issue_update(issue: dict) -> bool:
+    """更新後の課題 1 件をスナップショットへ反映する。Backlog へのアクセスは発生しない。
+
+    生データが未取得（起動直後など）か、対象が生データに含まれない場合は False を返す。
+    """
+    key = issue.get("issueKey")
+    if not key:
+        return False
+    # 全件取得の実行中でも取り込めるよう、まずバッファへ記録する
+    _recent_patches[key] = (time.time(), issue)
+    with _raw_lock:
+        if _raw["parents"] is None:
+            return False
+        if not _replace_issue(_raw["parents"], _raw["children_map"], issue):
+            return False
+        data = _rebuild_locked()
+        # 再構築と公開を _raw_lock 内で完結させ、更新が同時に来ても公開順が逆転しないようにする
+        _publish_snapshot(data)
+    return True
+
+
+def reflect_issue_change(issue: dict) -> None:
+    """課題の更新をダッシュボードへ即時反映する（更新系エンドポイントの共通後処理）。
+
+    生データからの再構築で済むのが通常経路。それが使えないときだけ、
+    全件取得をバックグラウンドに投げる（レスポンスは待たせない）。
+    """
+    try:
+        if apply_issue_update(issue):
+            return
+        log.info("Local snapshot update skipped (raw cache unavailable); refreshing in background")
+    except Exception:
+        log.exception("Local snapshot update failed; refreshing in background")
+    refresh_snapshot_async()
 
 
 def _snapshot_refresher() -> None:
@@ -488,8 +595,14 @@ def api_issues():
         abort(500, description=str(e))
 
 
-def _fetch_and_build():
-    """Backlog から全課題を取得し、フロント向けに整形した一覧を返す（キャッシュなし）。"""
+def _fetch_raw() -> tuple:
+    """Backlog から全課題を取得し、build_response() の入力を組み立てて返す。
+
+    戻り値: (parents, children_map, field_ids)
+    field_ids は build_response() の第3引数以降にそのまま展開できる並び。
+    整形（build_response）を分けているのは、スナップショットの局所更新で
+    「取得済みの生データから組み立て直す」経路を使えるようにするため。
+    """
     log.info("Fetching issues from Backlog (project=%s)", PROJECT)
 
     custom_fields = get_custom_fields()
@@ -518,7 +631,8 @@ def _fetch_and_build():
         pid = c["parentIssueId"]
         children_map.setdefault(pid, []).append(c)
 
-    return build_response(parents, children_map, progress_field_id, status_field_id, check_status_field_id, kintone_field_id)
+    field_ids = (progress_field_id, status_field_id, check_status_field_id, kintone_field_id)
+    return parents, children_map, field_ids
 
 
 @app.route("/api/field-options")
@@ -579,8 +693,8 @@ def api_update_issue(key: str):
 
     try:
         updated = backlog_patch(f"/issues/{key}", data)
-        # ダッシュボード一覧へ即時反映させるためスナップショットを同期更新
-        refresh_snapshot()
+        # 更新後の課題（PATCH のレスポンス）でスナップショットを局所更新し、即時反映する
+        reflect_issue_change(updated)
         return jsonify({"ok": True, "issueKey": updated.get("issueKey", key)})
     except requests.HTTPError as e:
         log.error("Backlog update error: %s", e)
@@ -639,13 +753,13 @@ def api_worklog_add(key: str):
         issue = backlog_get(f"/issues/{key}")
         current = issue.get("actualHours") or 0
         new_total = round(current + hours, 2)
-        backlog_patch(f"/issues/{key}", {"actualHours": new_total})
+        updated = backlog_patch(f"/issues/{key}", {"actualHours": new_total})
 
         # SQLite に履歴保存
         entry = add_worklog(parent_key, parent_title, key, name, hours, added_at)
 
-        # ダッシュボードへ即時反映
-        refresh_snapshot()
+        # ダッシュボードへ即時反映（Backlog 全件取得は挟まない）
+        reflect_issue_change(updated)
         return jsonify({"ok": True, "actualHours": new_total, "entry": entry})
     except requests.HTTPError as e:
         log.error("Backlog update error: %s", e)
@@ -684,10 +798,10 @@ def api_worklog_delete(entry_id: int):
             issue = backlog_get(f"/issues/{row['child_key']}")
             current = issue.get("actualHours") or 0
             new_total = max(0, round(current - row["hours"], 2))
-            backlog_patch(f"/issues/{row['child_key']}", {"actualHours": new_total})
+            updated = backlog_patch(f"/issues/{row['child_key']}", {"actualHours": new_total})
 
-        # ダッシュボードへ即時反映
-        refresh_snapshot()
+        # ダッシュボードへ即時反映（Backlog 全件取得は挟まない）
+        reflect_issue_change(updated)
         return jsonify({"ok": True, "actualHours": new_total})
     except requests.HTTPError as e:
         log.error("Backlog update error: %s", e)
