@@ -87,6 +87,12 @@
   }
   .legend-swatch i { position: absolute; inset: 0 auto 0 0; width: 55%; background: var(--barc); }
   .legend-swatch.plan i { width: 2px; left: 60%; background: var(--text); }
+  /* 集約帯の凡例（担当者別ビューのみ表示）: 高さの 3 段階を並べて見せる */
+  .legend-band { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+  .legend-band i { width: 6px; background: var(--text2); border-radius: 1px; }
+  .legend-band i.lv1 { height: 4px;  opacity: .45; }
+  .legend-band i.lv2 { height: 7px;  opacity: .65; }
+  .legend-band i.lv3 { height: 11px; opacity: .85; }
   .legend-swatch.rolled { height: 5px; border-color: var(--text3); }
   .legend-swatch.rolled i { background: var(--text3); }
 
@@ -95,7 +101,9 @@
     position: relative; overflow: auto;
     flex: 1; min-height: 0; border-top: 1px solid var(--border2);
   }
-  .gantt-canvas { position: relative; }
+  /* 左ペイン幅は --left-w（JS がドラッグ操作に合わせて更新する）を単一の出どころにする。
+     行のインライン style で幅を持たせると、リサイズのたびに全行の再描画が必要になるため。 */
+  .gantt-canvas { position: relative; --left-w: 520px; }
 
   .grow, .gantt-head { display: flex; align-items: stretch; }
   .gantt-head {
@@ -105,16 +113,30 @@
   .gantt-rows { position: relative; }
   .grow { position: relative; z-index: 1; height: 34px; border-bottom: 1px solid var(--border); }
   .grow.is-child { height: 30px; }
+  .grow.is-project { height: 32px; }
   .grow:hover .gtrack { background: rgba(127,127,127,.09); }
   .grow:hover .gcell-left { background: var(--bg3); }
 
   .gcell-left {
-    position: sticky; left: 0; flex: none; z-index: 2;
+    position: sticky; left: 0; flex: none; z-index: 2; width: var(--left-w);
     display: flex; align-items: center; gap: 6px;
     padding: 0 10px 0 8px; overflow: hidden;
     background: var(--bg2); border-right: 1px solid var(--border2);
   }
   .grow.is-child .gcell-left { background: var(--bg); padding-left: 26px; }
+  /* 担当者別ビューは 担当者 > 親案件 > 子課題 の 3 階層なので、子課題はもう 1 段下げる */
+  .grow.is-child.is-sub .gcell-left { padding-left: 46px; }
+
+  /* 左ペイン幅のドラッグハンドル（ヘッダー右端。sticky なので常に見えている） */
+  .left-resizer {
+    position: absolute; top: 0; right: 0; width: 7px; height: 100%;
+    cursor: col-resize; z-index: 4; touch-action: none;
+  }
+  .left-resizer::after {
+    content: ''; position: absolute; top: 8px; bottom: 8px; right: 2px; width: 3px;
+    border-radius: 2px; background: var(--border2);
+  }
+  .left-resizer:hover::after, .left-resizer.dragging::after { background: var(--accent); }
   .gantt-head .gcell-left {
     background: var(--bg2); font-size: 11px; color: var(--text3);
     text-transform: uppercase; letter-spacing: .05em; white-space: nowrap;
@@ -144,8 +166,8 @@
     background: var(--bg2); white-space: nowrap;
   }
   /* 年月ラベルは左ペインの右端に貼り付いて動く（横スクロールしても現在の年月が読める）。
-     LEFT_W(340) + 余白7px = 347px。overflow:hidden を付けると sticky が効かなくなるため付けない。 */
-  .gt-group > span { position: sticky; left: 347px; padding-left: 7px; }
+     左ペイン幅 + 余白7px。overflow:hidden を付けると sticky が効かなくなるため付けない。 */
+  .gt-group > span { position: sticky; left: calc(var(--left-w) + 7px); padding-left: 7px; }
   .gt-col {
     position: absolute; top: 0; height: 24px; display: flex;
     align-items: center; justify-content: center; gap: 2px;
@@ -185,6 +207,25 @@
   .grow.is-child .gbar.rolled { height: 8px; }
   .gbar.rolled .gbar-pct { font-size: 8px; }
 
+  /* 集約帯（担当者行・親案件行）: 配下の子課題の期間を 1 レーンにまとめたもの。
+     同時に走っている件数を「高さ」と「濃さ」の 2 要素で表す（並列が常態のため濃淡だけでは差が読めない）。
+     下端を揃えて描くので、同時件数の増減が山の形として読める。 */
+  .gband { position: absolute; bottom: 9px; border-radius: 2px; overflow: hidden; }
+  .gband > i { position: absolute; inset: 0; background: var(--barc); border-radius: 2px; }
+  .gband.lv1 { height: 6px;  } .gband.lv1 > i { opacity: .45; }
+  .gband.lv2 { height: 10px; } .gband.lv2 > i { opacity: .65; }
+  .gband.lv3 { height: 14px; } .gband.lv3 > i { opacity: .85; }
+  /* 白背景では薄い塗りが沈むので、ライトテーマだけ濃度を上げる */
+  [data-theme="light"] .gband.lv1 > i { opacity: .55; }
+  [data-theme="light"] .gband.lv2 > i { opacity: .78; }
+  [data-theme="light"] .gband.lv3 > i { opacity: .95; }
+  .grow.is-project .gband { bottom: 8px; }
+  .gband-n {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 9px; font-weight: 600; color: var(--text);
+    text-shadow: 0 0 3px var(--bg), 0 0 3px var(--bg);
+  }
+
   .no-date {
     font-size: 10px; color: var(--text3); border: 1px dashed var(--border2);
     border-radius: 4px; padding: 1px 6px; white-space: nowrap;
@@ -208,17 +249,18 @@
     padding: 0 6px; font-size: 10px; color: var(--text3); font-family: var(--mono); flex: none;
   }
   .assignee-tag {
-    flex: none; margin-left: auto; max-width: 72px; overflow: hidden;
+    flex: none; margin-left: auto; max-width: 110px; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap;
     font-size: 11px; color: var(--text2); text-align: right;
   }
   .grow.is-child .assignee-tag { color: var(--text3); }
 
-  /* 担当者別ビュー: グループヘッダ行・子課題の親案件キー表示 */
+  /* 担当者別ビュー: グループヘッダ行・その配下の親案件行 */
   .grow.is-group .gcell-left { background: var(--bg3); font-weight: 500; }
   .grow.is-group:hover .gcell-left { background: var(--bg3); }
   .group-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .parent-ref { color: var(--text3); font-weight: 400; font-size: 10px; }
+  .grow.is-project .gcell-left { background: var(--bg2); padding-left: 26px; }
+  .grow.is-project .issue-title { font-size: 12px; font-weight: 400; }
 
   /* 担当者別ビュー: 複数選択フィルタ */
   .assignee-multi { position: relative; }
@@ -254,6 +296,11 @@
   .gtip-grid { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 12px; }
   .gtip-grid dt { color: var(--text3); white-space: nowrap; }
   .gtip-grid dd { font-family: var(--mono); color: var(--text); }
+  .gtip-list {
+    margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--text2); line-height: 1.7;
+  }
+  .gtip-list b { color: var(--text); font-weight: 500; }
 
   /* 状態表示 */
   .state-overlay { padding: 60px; text-align: center; color: var(--text3); }
@@ -336,7 +383,8 @@
     <span class="legend-item" style="--barc:var(--yellow)"><span class="legend-swatch"><i></i></span>注意</span>
     <span class="legend-item" style="--barc:var(--red)"><span class="legend-swatch"><i></i></span>危険</span>
     <span class="legend-item"><span class="legend-swatch plan"><i></i></span>塗り=進捗 / 縦線=予定進捗</span>
-    <span class="legend-item"><span class="legend-swatch rolled"><i></i></span>細バー=子課題から集約</span>
+    <span class="legend-item" id="legendRolled"><span class="legend-swatch rolled"><i></i></span>細バー=子課題から集約</span>
+    <span class="legend-item" id="legendBand"><span class="legend-band"><i class="lv1"></i><i class="lv2"></i><i class="lv3"></i></span>帯の高さ=同時に走る課題数</span>
   </div>
 </div>
 
@@ -369,6 +417,7 @@ let didInitialScroll = false;
 let viewMode = 'project';                  // 'project'（案件別） | 'assignee'（担当者別）
 let selectedAssignees = [];                // 担当者別ビューの複数選択フィルタ。空 = 全員。要素は assigneeId(数値) または 'unassigned'
 let projectUsersCache = [];                // 複数選択フィルタの候補 [{id, name}]（/api/project-users）
+let bandCache = new Map();                 // 集約帯のツールチップ用: 行キー → { label, segs }
 
 const POLL_MS    = 60000;          // 60秒ポーリング（index.html と同じ）
 const FILTER_KEY = 'bpm2-filter';  // index.html とフィルタ状態を共有
@@ -376,11 +425,19 @@ const SCALE_KEY  = 'bpm2-gantt-scale';
 const HIDE_KEY   = 'bpm2-gantt-hide-undated';
 const MODE_KEY   = 'bpm2-gantt-mode';
 const ASSIGNEE_MULTI_KEY = 'bpm2-gantt-assignees';
-const LEFT_W     = 340;            // 左ペイン幅(px)
+const LEFTW_KEY  = 'bpm2-gantt-leftw';
+
+// 左ペイン幅。件名が読める既定値にしたうえで、ヘッダー右端のドラッグで各自が調整できる。
+const LEFT_W_DEFAULT = 520;
+const LEFT_W_MIN     = 260;
+const LEFT_W_MAX     = 800;
+const TRACK_W_MIN    = 320;        // 狭い画面でも時間軸に残す最低幅
+let leftW = LEFT_W_DEFAULT;        // 保存値。画面が狭いときは effectiveLeftW() が描画時にだけ縮める
+
 const SCALES = {
-  day:   { colW: 32, padUnits: 5 },
-  week:  { colW: 52, padUnits: 2 },
-  month: { colW: 64, padUnits: 1 },
+  day:   { colW: 28, padUnits: 5 },
+  week:  { colW: 44, padUnits: 2 },
+  month: { colW: 56, padUnits: 1 },
 };
 
 // ── フィルタの保存・復元（index.html と共通仕様）──
@@ -405,7 +462,52 @@ function loadFilter() {
     const savedAssignees = JSON.parse(localStorage.getItem(ASSIGNEE_MULTI_KEY) || '[]');
     if (Array.isArray(savedAssignees)) selectedAssignees = savedAssignees;
   } catch (e) {}
+  const lw = parseInt(localStorage.getItem(LEFTW_KEY) || '', 10);
+  if (Number.isFinite(lw)) leftW = clampLeftW(lw);
 }
+
+// ── 左ペイン幅（ドラッグでリサイズ）──────────────
+function clampLeftW(w) { return Math.min(Math.max(Math.round(w), LEFT_W_MIN), LEFT_W_MAX); }
+
+/** 実際に描画に使う幅。保存値は変えずに、狭い画面でだけ時間軸の最低幅を確保する。 */
+function effectiveLeftW() {
+  const room = window.innerWidth - TRACK_W_MIN;
+  return Math.max(LEFT_W_MIN, Math.min(leftW, room));
+}
+
+/** 幅を CSS 変数へ流し込む。行の HTML は幅を持たないので再描画は不要。 */
+function applyLeftW() {
+  const canvas = document.getElementById('ganttCanvas');
+  if (canvas) canvas.style.setProperty('--left-w', effectiveLeftW() + 'px');
+}
+
+function startLeftResize(ev) {
+  ev.preventDefault();
+  const handle = ev.currentTarget;
+  const startX = ev.clientX;
+  const startW = effectiveLeftW();
+  handle.classList.add('dragging');
+  handle.setPointerCapture(ev.pointerId);
+  const onMove = (e) => { leftW = clampLeftW(startW + (e.clientX - startX)); applyLeftW(); };
+  const onUp = () => {
+    handle.classList.remove('dragging');
+    handle.removeEventListener('pointermove', onMove);
+    handle.removeEventListener('pointerup', onUp);
+    handle.removeEventListener('pointercancel', onUp);
+    try { localStorage.setItem(LEFTW_KEY, String(leftW)); } catch (e) {}
+  };
+  handle.addEventListener('pointermove', onMove);
+  handle.addEventListener('pointerup', onUp);
+  handle.addEventListener('pointercancel', onUp);
+}
+
+function resetLeftW() {
+  leftW = LEFT_W_DEFAULT;
+  applyLeftW();
+  try { localStorage.setItem(LEFTW_KEY, String(leftW)); } catch (e) {}
+}
+
+window.addEventListener('resize', applyLeftW);
 
 // 保存されたフィルタ・粒度を UI コントロールへ反映
 function applyFilterUI() {
@@ -564,11 +666,16 @@ function visibleRows() {
 
 /**
  * 担当者別ビューの行データ。
- * 全親の children をフラット化し、フィルタ適用後に assigneeId でグループ化して返す。
- * 各グループの children には親への参照（.parent）を付ける（左ペインの親キー表示・ツールチップ用）。
+ * 全親の children をフラット化し、フィルタ適用後に assigneeId でグループ化し、
+ * さらにグループ内を親案件（案件行）ごとにまとめて 担当者 > 親案件 > 子課題 の 3 階層で返す。
+ * 各子課題には親への参照（.parent）を付ける（ツールチップ・詳細モーダル用）。
  * カスタムステータスは子課題自身が持たないため、親案件の customStatus で判定する（継承）。
- * グループは名前の五十音順。未割当（assigneeId が無い）は常に末尾。
- * グループ内は開始日昇順（同日は課題キー順）。課題が 1 件も残らない担当者はグループごと出さない。
+ *
+ * 戻り値: [{ key, assigneeId, name, children（フラット）, projects: [{ key, parent, children }] }]
+ * - グループは担当者名の五十音順。未割当（assigneeId が無い）は常に末尾。
+ * - グループ内の案件は「その担当者の子課題の最早開始日」昇順。期間が引けない案件は末尾に案件キー順。
+ * - 案件内の子課題は開始日昇順（同日は課題キー順）。期間が引けない子課題は末尾に課題キー順。
+ * - 課題が 1 件も残らない担当者・案件は行ごと出さない。
  */
 function visibleAssigneeGroups() {
   const bucket = new Map();   // key: assigneeId(数値) または 'unassigned'
@@ -588,25 +695,51 @@ function visibleAssigneeGroups() {
           assigneeId: c.assigneeId ?? null,
           name: c.assignee || '未割当',
           children: [],
+          projectMap: new Map(),      // 親案件 ID → 案件行（あとで配列化する）
         });
       }
-      bucket.get(idKey).children.push(Object.assign({}, c, { parent: row }));
+      const g = bucket.get(idKey);
+      let p = g.projectMap.get(row.id);
+      if (!p) {
+        // 同じ案件が複数の担当者にぶら下がるため、開閉キーには担当者を含めて一意にする
+        p = { key: g.key + ':p:' + row.id, parent: row, children: [] };
+        g.projectMap.set(row.id, p);
+      }
+      p.children.push(Object.assign({}, c, { parent: row }));
     }
   }
+
   const groups = [...bucket.values()];
   groups.sort((a, b) => {
     const aUn = a.assigneeId == null, bUn = b.assigneeId == null;
     if (aUn !== bUn) return aUn ? 1 : -1;
     return a.name.localeCompare(b.name, 'ja');
   });
+
   for (const g of groups) {
-    g.children.sort((a, b) => {
-      const sa = a.start || '9999-12-31', sb = b.start || '9999-12-31';
-      if (sa !== sb) return sa.localeCompare(sb);
-      return a.id.localeCompare(b.id);
+    g.projects = [...g.projectMap.values()];
+    delete g.projectMap;
+    for (const p of g.projects) {
+      p.children.sort(compareBySchedule);
+      const firsts = p.children.map(c => resolveRange(c, 'child')).filter(Boolean).map(r => +r.start);
+      p.firstStart = firsts.length ? Math.min(...firsts) : null;   // 期間が引ける子課題が無ければ null
+    }
+    g.projects.sort((a, b) => {
+      if ((a.firstStart == null) !== (b.firstStart == null)) return a.firstStart == null ? 1 : -1;
+      if (a.firstStart != null && a.firstStart !== b.firstStart) return a.firstStart - b.firstStart;
+      return a.parent.id.localeCompare(b.parent.id);
     });
+    g.children = g.projects.flatMap(p => p.children);   // 軸・件数・工数合計はフラットな一覧を使う
   }
   return groups;
+}
+
+/** 開始日昇順（同日は課題キー順）。期間が引けない課題は末尾に課題キー順で回す。 */
+function compareBySchedule(a, b) {
+  const ra = resolveRange(a, 'child'), rb = resolveRange(b, 'child');
+  if (!ra !== !rb) return ra ? -1 : 1;
+  if (ra && rb && +ra.start !== +rb.start) return ra.start - rb.start;
+  return a.id.localeCompare(b.id);
 }
 
 /** 複数選択フィルタの候補一覧。/api/project-users と実データ上の担当者の和集合（五十音順）。未割当は含まない（別枠で表示）*/
@@ -755,7 +888,134 @@ function planProgressOf(s, d) {
   return Math.round((t - s) / (d - s) * 100);
 }
 
+// ── 集約帯（担当者行・親案件行）────────────────────
+const HEALTH_RANK = { green: 0, yellow: 1, red: 2 };
+const HEALTH_COLOR = { green: 'var(--green)', yellow: 'var(--yellow)', red: 'var(--red)' };
+
+/** 複数課題をまとめた区間の色は「最も悪い健全性」を採る */
+function worstHealth(children) {
+  let worst = 'green';
+  for (const c of children) {
+    const h = childHealth(c);
+    if (HEALTH_RANK[h] > HEALTH_RANK[worst]) worst = h;
+  }
+  return worst;
+}
+
+/** 翌営業日（土日を飛ばす）。金曜期限 → 月曜開始を「空き」と見なさないために使う。 */
+function nextBusinessDay(d) {
+  let n = addDays(d, 1);
+  while (n.getDay() === 0 || n.getDay() === 6) n = addDays(n, 1);
+  return n;
+}
+
+/**
+ * 子課題の期間を 1 レーンにまとめる。重なり・連続（間が土日だけの場合を含む）は 1 セグメントに繋ぎ、
+ * それ以外の隙間はそのまま空ける（＝空きとして見える）。祝日は Backlog から取れないため隙間になる。
+ * 戻り値: [{ start, due, items: [子課題] }]（開始日昇順）
+ */
+function mergeSegments(children) {
+  const rs = children
+    .map(c => ({ r: resolveRange(c, 'child'), c }))
+    .filter(x => x.r)
+    .sort((a, b) => a.r.start - b.r.start);
+
+  const segs = [];
+  for (const { r, c } of rs) {
+    const last = segs[segs.length - 1];
+    if (last && r.start <= nextBusinessDay(last.due)) {
+      if (r.due > last.due) last.due = r.due;
+      last.items.push(c);
+    } else {
+      segs.push({ start: r.start, due: r.due, items: [c] });
+    }
+  }
+  return segs;
+}
+
+/**
+ * セグメントを「同時に走っている件数」ごとのサブ区間へ分割する（境界のスイープ）。
+ * 並列作業が常態のため、件数を高さ・濃さ・数字で描き分けられるようにここで n を出しておく。
+ * 戻り値: [{ start, due, n, health }]
+ */
+function splitByConcurrency(seg) {
+  const ranges = seg.items.map(c => ({ c, r: resolveRange(c, 'child') })).filter(x => x.r);
+  const bounds = new Set();
+  for (const { r } of ranges) { bounds.add(+r.start); bounds.add(+addDays(r.due, 1)); }
+  const pts = [...bounds].sort((a, b) => a - b);
+
+  const out = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const from = new Date(pts[i]);
+    const active = ranges.filter(({ r }) => r.start <= from && addDays(r.due, 1) > from).map(x => x.c);
+    if (!active.length) continue;                       // 土日連結で生じた実作業のない区間
+    const due = addDays(new Date(pts[i + 1]), -1);
+    const health = worstHealth(active);
+    const last = out[out.length - 1];
+    // 件数も色も同じで日付が続くなら 1 ブロックに畳む（DOM 数を抑える）
+    if (last && last.n === active.length && last.health === health && diffDays(last.due, from) === 1) {
+      last.due = due;
+    } else {
+      out.push({ start: from, due, n: active.length, health });
+    }
+  }
+  return out;
+}
+
+/**
+ * 集約帯の HTML。ツールチップ用に bandCache へセグメントを積む。
+ * key は行の開閉キーをそのまま使う（担当者行 'a:<id>' / 案件行 'a:<id>:p:<案件ID>'）。
+ */
+function bandCell(key, label, children) {
+  const segs = mergeSegments(children);
+  bandCache.set(key, { label, segs });
+  if (!segs.length) return '';
+
+  let html = '';
+  segs.forEach((seg, si) => {
+    for (const b of splitByConcurrency(seg)) {
+      const x1 = axis.xOf(b.start);
+      const w  = Math.max(axis.xOf(b.due) + axis.dayW(b.due) - x1, 3);
+      const lv = Math.min(b.n, 3);
+      const num = b.n >= 2 && w >= 14 ? `<span class="gband-n">${b.n}</span>` : '';
+      html += `<div class="gband lv${lv}" style="left:${x1}px;width:${w}px;--barc:${HEALTH_COLOR[b.health]}"
+        onmouseenter="showBandTip(event, '${escAttr(key)}', ${si})" onmousemove="moveTip(event)" onmouseleave="hideTip()"
+      ><i></i>${num}</div>`;
+    }
+  });
+  return html;
+}
+
 // ── 描画 ──────────────────────────────────────────
+/** ヘッダー左ペインの右端に置く幅調整ハンドル */
+function leftResizerHtml() {
+  return `<div class="left-resizer" title="ドラッグで幅を調整（ダブルクリックで既定に戻す）"
+    onpointerdown="startLeftResize(event)" ondblclick="resetLeftW()"></div>`;
+}
+
+/** 背景（グリッド・週末・今日ライン）。行の下に 1 枚だけ敷く。 */
+function ganttBgHtml() {
+  return `<div class="gantt-bg" style="left:var(--left-w);width:${axis.width}px">` +
+    axis.cols.map(c =>
+      `<div class="gcol${c.weekend ? ' weekend' : ''}${c.boundary ? ' month-start' : ''}" style="left:${c.x}px;width:${c.w}px"></div>`).join('') +
+    (axis.todayX != null ? `<div class="gtoday" style="left:${axis.todayX}px"></div>` : '') +
+    `</div>`;
+}
+
+/** 時間軸ヘッダー（上段の年月グループ＋下段の目盛り） */
+function axisHeadHtml() {
+  return `<div class="gtrack" style="width:${axis.width}px">
+     <div class="gt-groups">${axis.groups.map(g =>
+       `<div class="gt-group" style="left:${g.x}px;width:${g.w}px"><span>${g.label}</span></div>`).join('')}
+       ${axis.todayX != null ? `<div class="gt-today-flag" style="left:${axis.todayX}px"><span>今日</span></div>` : ''}
+     </div>
+     <div class="gt-cols">${axis.cols.map(c =>
+       `<div class="gt-col${c.weekend ? ' weekend' : ''}${c.isToday ? ' today' : ''}" style="left:${c.x}px;width:${c.w}px">` +
+       `${c.label}${c.sub ? `<small>${c.sub}</small>` : ''}</div>`).join('')}
+     </div>
+   </div>`;
+}
+
 function renderGantt() {
   if (viewMode === 'assignee') { renderAssigneeGantt(); return; }
   const rows = visibleRows();
@@ -769,34 +1029,21 @@ function renderGantt() {
   document.getElementById('ganttCanvas').style.display = '';
 
   axis = buildAxis(rows);
-  const totalW = LEFT_W + axis.width;
   const head = document.getElementById('ganttHead');
   const body = document.getElementById('ganttRows');
-  head.style.width = body.style.width = totalW + 'px';
+  head.style.width = body.style.width = `calc(var(--left-w) + ${axis.width}px)`;
+  applyLeftW();
 
   const childCount = rows.reduce((s, r) => s + r.children.length, 0);
   updateHideChipLabel();
   head.innerHTML =
-    `<div class="gcell-left" style="width:${LEFT_W}px">案件 / 課題
+    `<div class="gcell-left">案件 / 課題
        <span class="head-count">${rows.length} 案件 / ${childCount} 課題</span>
-     </div>` +
-    `<div class="gtrack" style="width:${axis.width}px">
-       <div class="gt-groups">${axis.groups.map(g =>
-         `<div class="gt-group" style="left:${g.x}px;width:${g.w}px"><span>${g.label}</span></div>`).join('')}
-         ${axis.todayX != null ? `<div class="gt-today-flag" style="left:${axis.todayX}px"><span>今日</span></div>` : ''}
-       </div>
-       <div class="gt-cols">${axis.cols.map(c =>
-         `<div class="gt-col${c.weekend ? ' weekend' : ''}${c.isToday ? ' today' : ''}" style="left:${c.x}px;width:${c.w}px">` +
-         `${c.label}${c.sub ? `<small>${c.sub}</small>` : ''}</div>`).join('')}
-       </div>
-     </div>`;
+       ${leftResizerHtml()}
+     </div>` + axisHeadHtml();
 
   // 背景（グリッド・週末・今日ライン）は行の下に 1 枚だけ敷く
-  let html = `<div class="gantt-bg" style="left:${LEFT_W}px;width:${axis.width}px">` +
-    axis.cols.map(c =>
-      `<div class="gcol${c.weekend ? ' weekend' : ''}${c.boundary ? ' month-start' : ''}" style="left:${c.x}px;width:${c.w}px"></div>`).join('') +
-    (axis.todayX != null ? `<div class="gtoday" style="left:${axis.todayX}px"></div>` : '') +
-    `</div>`;
+  let html = ganttBgHtml();
 
   for (const { parent, children, range, autoExpand } of rows) {
     const isOpen = expanded.has(parent.id) || autoExpand;
@@ -809,7 +1056,7 @@ function renderGantt() {
     const pBar = barCell(parent, 'parent', range);
 
     html += `<div class="grow">
-      <div class="gcell-left" style="width:${LEFT_W}px">
+      <div class="gcell-left">
         <button class="toggle-btn${isOpen ? ' open' : ''}" onclick="toggleRow('${escAttr(parent.id)}')" aria-label="展開">▶</button>
         <span class="health-icon">${icon}</span>
         <a href="${escAttr(parent.url)}" target="_blank" rel="noopener" class="issue-key">${escHtml(parent.id)}</a>
@@ -825,7 +1072,7 @@ function renderGantt() {
     for (const c of sortChildren(children)) {
       const cBar = barCell(c, 'child');
       html += `<div class="grow is-child">
-        <div class="gcell-left" style="width:${LEFT_W}px">
+        <div class="gcell-left">
           <span class="toggle-spacer"></span>
           <a href="${escAttr(c.url)}" target="_blank" rel="noopener" class="issue-key">${escHtml(c.id)}</a>
           <span class="issue-title" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px" onclick="openChildModal('${escAttr(c.id)}')" title="詳細を表示">${escHtml(c.title)}</span>
@@ -842,7 +1089,11 @@ function renderGantt() {
   else { scroll.scrollLeft = prevScrollLeft; scroll.scrollTop = prevScrollTop; }
 }
 
-/** 担当者別ビューの描画。親課題行は出さず、担当者グループ＋子課題行のみで構成する。 */
+/**
+ * 担当者別ビューの描画。担当者 > 親案件 > 子課題 の 3 階層。
+ * 担当者行・親案件行には、配下の子課題をまとめた集約帯（bandCell）を描く。
+ * 「▶ 全て閉じる」で担当者行だけを並べたとき、帯の無い期間＝その担当者の空きとして読める。
+ */
 function renderAssigneeGantt() {
   const groups = visibleAssigneeGroups();
   const scroll = document.getElementById('ganttScroll');
@@ -856,34 +1107,23 @@ function renderAssigneeGantt() {
 
   // buildAxis は { range, children } の配列を期待する。グループは range を持たないため null を渡す（null 安全）。
   axis = buildAxis(groups.map(g => ({ range: null, children: g.children })));
-  const totalW = LEFT_W + axis.width;
   const head = document.getElementById('ganttHead');
   const body = document.getElementById('ganttRows');
-  head.style.width = body.style.width = totalW + 'px';
+  head.style.width = body.style.width = `calc(var(--left-w) + ${axis.width}px)`;
+  applyLeftW();
 
-  const childCount = groups.reduce((s, g) => s + g.children.length, 0);
+  const childCount   = groups.reduce((s, g) => s + g.children.length, 0);
+  const projectCount = groups.reduce((s, g) => s + g.projects.length, 0);
   updateHideChipLabel();
+  bandCache = new Map();
   head.innerHTML =
-    `<div class="gcell-left" style="width:${LEFT_W}px">担当者 / 課題
-       <span class="head-count">${groups.length} 名 / ${childCount} 課題</span>
-     </div>` +
-    `<div class="gtrack" style="width:${axis.width}px">
-       <div class="gt-groups">${axis.groups.map(g =>
-         `<div class="gt-group" style="left:${g.x}px;width:${g.w}px"><span>${g.label}</span></div>`).join('')}
-         ${axis.todayX != null ? `<div class="gt-today-flag" style="left:${axis.todayX}px"><span>今日</span></div>` : ''}
-       </div>
-       <div class="gt-cols">${axis.cols.map(c =>
-         `<div class="gt-col${c.weekend ? ' weekend' : ''}${c.isToday ? ' today' : ''}" style="left:${c.x}px;width:${c.w}px">` +
-         `${c.label}${c.sub ? `<small>${c.sub}</small>` : ''}</div>`).join('')}
-       </div>
-     </div>`;
+    `<div class="gcell-left">担当者 / 案件 / 課題
+       <span class="head-count">${groups.length} 名 / ${projectCount} 案件 / ${childCount} 課題</span>
+       ${leftResizerHtml()}
+     </div>` + axisHeadHtml();
 
   // 背景（グリッド・週末・今日ライン）は行の下に 1 枚だけ敷く
-  let html = `<div class="gantt-bg" style="left:${LEFT_W}px;width:${axis.width}px">` +
-    axis.cols.map(c =>
-      `<div class="gcol${c.weekend ? ' weekend' : ''}${c.boundary ? ' month-start' : ''}" style="left:${c.x}px;width:${c.w}px"></div>`).join('') +
-    (axis.todayX != null ? `<div class="gtoday" style="left:${axis.todayX}px"></div>` : '') +
-    `</div>`;
+  let html = ganttBgHtml();
 
   for (const g of groups) {
     const isOpen = !collapsedGroups.has(g.key);
@@ -892,28 +1132,44 @@ function renderAssigneeGantt() {
     const label = g.assigneeId == null ? '未割当' : g.name;
 
     html += `<div class="grow is-group">
-      <div class="gcell-left" style="width:${LEFT_W}px">
+      <div class="gcell-left">
         <button class="toggle-btn${isOpen ? ' open' : ''}" onclick="toggleGroup('${escAttr(g.key)}')" aria-label="展開">▶</button>
         <span class="group-name">👤 ${escHtml(label)}</span>
-        <span class="count-badge">${g.children.length}</span>
+        <span class="count-badge">${g.projects.length}案件 / ${g.children.length}課題</span>
         <span class="assignee-tag" style="max-width:none">計 ${totalPlanned}h/${totalActual}h</span>
       </div>
-      <div class="gtrack" style="width:${axis.width}px"></div>
+      <div class="gtrack" style="width:${axis.width}px">${bandCell(g.key, '👤 ' + label, g.children)}</div>
     </div>`;
 
     if (!isOpen) continue;
-    for (const c of g.children) {
-      const cBar = barCell(c, 'child');
-      html += `<div class="grow is-child">
-        <div class="gcell-left" style="width:${LEFT_W}px">
-          <span class="toggle-spacer"></span>
-          <a href="${escAttr(c.url)}" target="_blank" rel="noopener" class="issue-key">${escHtml(c.id)}</a>
-          <a href="${escAttr(c.parent.url)}" target="_blank" rel="noopener" class="issue-key parent-ref" title="${escAttr(c.parent.title)}">[${escHtml(c.parent.id)}]</a>
-          <span class="issue-title" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px" onclick="openChildModal('${escAttr(c.id)}')" title="詳細を表示">${escHtml(c.title)}</span>
-          ${cBar ? '' : '<span class="no-date">日付未設定</span>'}
+    for (const p of g.projects) {
+      const pOpen = !collapsedGroups.has(p.key);
+      const pBand = bandCell(p.key, `${p.parent.id} ${p.parent.title}`, p.children);
+
+      html += `<div class="grow is-project">
+        <div class="gcell-left">
+          <button class="toggle-btn${pOpen ? ' open' : ''}" onclick="toggleGroup('${escAttr(p.key)}')" aria-label="展開">▶</button>
+          <a href="${escAttr(p.parent.url)}" target="_blank" rel="noopener" class="issue-key">${escHtml(p.parent.id)}</a>
+          <span class="issue-title" title="${escAttr(p.parent.title)}">${escHtml(p.parent.title)}</span>
+          <span class="count-badge">${p.children.length}</span>
+          ${pBand ? '' : '<span class="no-date">日付未設定</span>'}
         </div>
-        <div class="gtrack" style="width:${axis.width}px">${cBar}</div>
+        <div class="gtrack" style="width:${axis.width}px">${pBand}</div>
       </div>`;
+
+      if (!pOpen) continue;
+      for (const c of p.children) {
+        const cBar = barCell(c, 'child');
+        html += `<div class="grow is-child is-sub">
+          <div class="gcell-left">
+            <span class="toggle-spacer"></span>
+            <a href="${escAttr(c.url)}" target="_blank" rel="noopener" class="issue-key">${escHtml(c.id)}</a>
+            <span class="issue-title" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px" onclick="openChildModal('${escAttr(c.id)}')" title="詳細を表示">${escHtml(c.title)}</span>
+            ${cBar ? '' : '<span class="no-date">日付未設定</span>'}
+          </div>
+          <div class="gtrack" style="width:${axis.width}px">${cBar}</div>
+        </div>`;
+      }
     }
   }
   body.innerHTML = html;
@@ -960,7 +1216,10 @@ function toggleRow(id) {
   renderGantt();
 }
 
-/** 担当者別ビューのグループ開閉（既定は全開。閉じたものだけ collapsedGroups に記録） */
+/**
+ * 担当者別ビューの開閉（担当者行 'a:<id>' と親案件行 'a:<id>:p:<案件ID>' の共通処理）。
+ * 既定は全開なので、閉じたものだけを collapsedGroups に記録する。
+ */
 function toggleGroup(key) {
   if (collapsedGroups.has(key)) collapsedGroups.delete(key); else collapsedGroups.add(key);
   renderGantt();
@@ -974,7 +1233,16 @@ function openIssue(id) {
 
 function setAllExpanded(open) {
   if (viewMode === 'assignee') {
-    collapsedGroups = open ? new Set() : new Set(visibleAssigneeGroups().map(g => g.key));
+    // 「全て閉じる」は担当者行だけを残す（親案件行も畳む）＝ 空き確認の状態
+    if (open) collapsedGroups = new Set();
+    else {
+      const keys = new Set();
+      for (const g of visibleAssigneeGroups()) {
+        keys.add(g.key);
+        for (const p of g.projects) keys.add(p.key);
+      }
+      collapsedGroups = keys;
+    }
   } else {
     expanded = open ? new Set(visibleRows().map(r => r.parent.id)) : new Set();
   }
@@ -1013,7 +1281,7 @@ function countUndated() {
 function scrollToToday() {
   if (!axis || axis.todayX == null) return;
   const el = document.getElementById('ganttScroll');
-  el.scrollLeft = Math.max(0, LEFT_W + axis.todayX - el.clientWidth / 2);
+  el.scrollLeft = Math.max(0, effectiveLeftW() + axis.todayX - el.clientWidth / 2);
 }
 
 // ── ツールチップ ──────────────────────────────────
@@ -1060,6 +1328,43 @@ function showTip(ev, id) {
      <div class="gtip-title">${escHtml(item.title)}</div>
      <dl class="gtip-grid">${rows.map(([k, v]) =>
        `<dt>${k}</dt><dd>${escHtml(v)}</dd>`).join('')}</dl>`;
+  tip.classList.add('open');
+  moveTip(ev);
+}
+
+/** 集約帯のツールチップ。1 セグメント（＝連続して作業がある期間）ぶんの内訳を出す。 */
+function showBandTip(ev, key, segIndex) {
+  const entry = bandCache.get(key);
+  const seg = entry && entry.segs[segIndex];
+  if (!seg) return;
+
+  const days = diffDays(seg.start, seg.due) + 1;
+  const maxN = splitByConcurrency(seg).reduce((m, b) => Math.max(m, b.n), 0);
+  const planned = seg.items.reduce((s, c) => s + c.plannedH, 0);
+  const actual  = seg.items.reduce((s, c) => s + c.actualH, 0);
+  const diff = Math.round((actual - planned) * 10) / 10;
+
+  const items = [...seg.items].sort(compareBySchedule);
+  const shown = items.slice(0, 5).map(c => {
+    const r = resolveRange(c, 'child');
+    return `<div><b>${escHtml(c.id)}</b> ${escHtml(c.title)}` +
+           (r ? `（${fmtMD(r.start)}→${fmtMD(r.due)}）` : '') + `</div>`;
+  }).join('');
+  const rest = items.length > 5 ? `<div>ほか ${items.length - 5} 件</div>` : '';
+
+  const rows = [
+    ['期間',     `${fmtYMD(seg.start)} → ${fmtYMD(seg.due)}（${days}日）`],
+    ['課題数',   `${seg.items.length} 件`],
+    ['同時最大', `${maxN} 件`],
+    ['予定/実績', `${planned}h / ${actual}h（${diff >= 0 ? '+' : ''}${diff}h）`],
+  ];
+
+  const tip = document.getElementById('gtip');
+  tip.innerHTML =
+    `<div class="gtip-key">集約</div>
+     <div class="gtip-title">${escHtml(entry.label)}</div>
+     <dl class="gtip-grid">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${escHtml(v)}</dd>`).join('')}</dl>
+     <div class="gtip-list">${shown}${rest}</div>`;
   tip.classList.add('open');
   moveTip(ev);
 }
@@ -1145,13 +1450,18 @@ function setViewMode(mode) {
   scrollToToday();
 }
 
-/** モードに応じて担当者フィルタ（単一選択/複数選択）の表示切替とモードチップの active 状態を反映 */
+/** モードに応じて担当者フィルタ（単一選択/複数選択）・凡例の表示切替とモードチップの active 状態を反映 */
 function updateModeUI() {
   document.querySelectorAll('.chip[data-mode]').forEach(c => c.classList.toggle('active', c.dataset.mode === viewMode));
   const single = document.getElementById('assigneeFilter');
   const multiWrap = document.getElementById('assigneeMultiWrap');
   if (single) single.style.display = viewMode === 'assignee' ? 'none' : '';
   if (multiWrap) multiWrap.style.display = viewMode === 'assignee' ? '' : 'none';
+  // 凡例はモード固有のものだけ出す（集約帯は担当者別、集約細バーは案件別にしか現れない）
+  const legendBand = document.getElementById('legendBand');
+  const legendRolled = document.getElementById('legendRolled');
+  if (legendBand) legendBand.style.display = viewMode === 'assignee' ? '' : 'none';
+  if (legendRolled) legendRolled.style.display = viewMode === 'assignee' ? 'none' : '';
   updateAssigneeMultiBtnLabel();
 }
 
