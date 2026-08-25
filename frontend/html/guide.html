@@ -195,6 +195,11 @@
   .gm-bar.y { background: var(--bg4); border-color: var(--yellow); } .gm-bar.y .gm-bar-fill { background: var(--yellow); }
   .gm-bar.r { background: var(--bg4); border-color: var(--red); } .gm-bar.r .gm-bar-fill { background: var(--red); }
   .gm-today { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--accent); opacity: .7; }
+  /* 集約帯（担当者行・案件行）のサンプル: 高さで同時課題数を表す */
+  .gm-band { position: absolute; bottom: 0; border-radius: 2px; background: var(--green); }
+  .gm-band.lv1 { height: 5px;  opacity: .45; }
+  .gm-band.lv2 { height: 9px;  opacity: .65; }
+  .gm-band.lv3 { height: 13px; opacity: .85; }
 </style>
 </head>
 <body>
@@ -510,7 +515,7 @@
   <!-- ── 7. ガントチャート ── -->
   <section id="s7">
     <h2 class="sec">7. ガントチャートで期間を俯瞰する</h2>
-    <p>ヘッダーの <b>「📅 ガント」</b> から、案件・子課題の期間をタイムライン上のバーで俯瞰できる画面を開けます。一覧画面と同じデータ（同じ約60秒ごとの自動更新）を使い、<b>「📋 案件別」</b>（親案件ごとの階層表示）と<b>「👤 担当者別」</b>（担当者ごとに子課題だけを並べる表示）を切り替えられます。</p>
+    <p>ヘッダーの <b>「📅 ガント」</b> から、案件・子課題の期間をタイムライン上のバーで俯瞰できる画面を開けます。一覧画面と同じデータ（同じ約60秒ごとの自動更新）を使い、<b>「📋 案件別」</b>（親案件ごとの階層表示）と<b>「👤 担当者別」</b>（担当者ごとに案件・子課題を並べる表示）を切り替えられます。</p>
 
     <div class="screen">
       <div class="screen-bar"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span><span class="screen-url">http://localhost:3031/gantt.html</span></div>
@@ -578,10 +583,11 @@
       <li><b>フィルター</b>：健全性・状態・担当者・ステータスは一覧画面と共通で、設定内容もブラウザに保存され両画面で共有されます。</li>
       <li><b>バーや課題番号のクリック</b>：該当の課題を Backlog の新しいタブで開きます。バーにマウスを乗せると、期間・工数・進捗などの詳細がツールチップで表示されます。</li>
       <li><b>子課題の詳細を編集する</b>：子課題のタイトル（点線下線）をクリックすると、一覧画面と同じ詳細レイヤー（→ 4章）が開き、担当者・進捗率・日程・実績工数をその場で編集できます。バー自体をドラッグして日程を変えることはできません。</li>
+      <li><b>左側「案件 / 課題」欄の幅を変える</b>：見出し行の右端の境界線を左右に<b>ドラッグ</b>すると、件名を表示する幅を広げたり狭めたりできます（ダブルクリックで既定の幅に戻ります）。幅はブラウザに保存され、次回も同じ幅で開きます。スケジュール側は横スクロールで先の期間まで見られます。</li>
     </ul>
 
     <h3>担当者別ビューで個人のスケジュールを見る</h3>
-    <p>「👤 担当者別」ビューに切り替えると、親案件の行は表示されず、<b>担当者ごとに子課題だけがグルーピング</b>されて並びます。誰にどれだけタスクが割り当たっているか、期間に空きがないかを一人ずつ確認できます。</p>
+    <p>「👤 担当者別」ビューに切り替えると、<b>担当者 → 案件 → 子課題</b> の3階層で並びます。誰にどれだけタスクが割り当たっているか、期間に空きがないかを一人ずつ確認でき、同じ名前の子課題（「詳細設計」など）がどの案件のものかも一目で分かります。</p>
 
     <div class="screen">
       <div class="screen-bar"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span><span class="screen-url">http://localhost:3031/gantt.html</span></div>
@@ -596,30 +602,42 @@
         <div class="gm-body">
           <div class="gm-axis"><span></span><span>6/22</span><span>6/29</span><span>7/6</span><span>7/13</span><span>7/20</span></div>
           <div class="gm-row" style="background:var(--bg3)">
-            <div class="gm-label">▶ 👤 佐藤 <span class="count-badge">2</span></div>
-            <div class="gm-track" style="background:none"></div>
+            <div class="gm-label">▼ 👤 佐藤 <span class="count-badge">2案件 / 3課題</span></div>
+            <div class="gm-track" style="background:none">
+              <div class="gm-band lv2" style="left:10%;width:28%"></div>
+              <div class="gm-band lv3" style="left:38%;width:12%"></div>
+              <div class="gm-band lv1" style="left:70%;width:18%"></div>
+              <span class="marker" style="position:absolute;left:38%;top:-16px">7</span>
+            </div>
           </div>
-          <div class="gm-row child">
-            <div class="gm-label"><span class="issue-key">V2A9-1706</span><span class="issue-key" style="color:var(--text3);font-size:10px">[V2A9-1652]</span><span class="issue-title-child">出力バッチの実装</span></div>
+          <div class="gm-row child" style="padding-left:26px">
+            <div class="gm-label">▼ <span class="issue-key">V2A9-1652</span><span class="issue-title-child">recipe.csvの定期出力機能開発</span> <span class="count-badge">2</span></div>
+            <div class="gm-track" style="background:none"><div class="gm-band lv2" style="left:10%;width:40%"></div></div>
+          </div>
+          <div class="gm-row child" style="padding-left:44px">
+            <div class="gm-label"><span class="issue-key">V2A9-1706</span><span class="issue-title-child">出力バッチの実装</span></div>
             <div class="gm-track"><div class="gm-bar g" style="left:25%;width:30%"><div class="gm-bar-fill" style="width:90%"></div></div></div>
           </div>
           <div class="gm-row" style="background:var(--bg3)">
-            <div class="gm-label">▶ 👤 未割当 <span class="count-badge">3</span></div>
-            <div class="gm-track" style="background:none"></div>
+            <div class="gm-label">▶ 👤 未割当 <span class="count-badge">2案件 / 3課題</span></div>
+            <div class="gm-track" style="background:none"><div class="gm-band lv1" style="left:55%;width:20%"></div></div>
           </div>
         </div>
       </div>
     </div>
 
     <ol class="legend">
-      <li><span class="marker">5</span><span><b>ビュー切替</b>：「📋 案件別」（従来どおり）と「👤 担当者別」を切り替えます。担当者別ビューでは親案件行は出ず、子課題のタイトル横に <code>[V2A9-1652]</code> のように親案件のキーが小さく表示されます。</span></li>
+      <li><span class="marker">5</span><span><b>ビュー切替</b>：「📋 案件別」（従来どおり）と「👤 担当者別」を切り替えます。担当者別ビューは <b>担当者 → 案件 → 子課題</b> の3階層で、案件行にはその担当者が持つ課題の件数が表示されます。</span></li>
       <li><span class="marker">6</span><span><b>担当者の複数選択</b>：担当者別ビューでは、担当者を複数チェックして絞り込めます（例：自分のチームのメンバーだけ表示）。選択状態はブラウザに保存され、次回も同じメンバーで表示されます。「未割当」グループは一番下に固定表示されます。</span></li>
+      <li><span class="marker">7</span><span><b>集約帯（スケジュールの帯）</b>：担当者行・案件行には、配下の子課題の期間を1本にまとめた帯が出ます。<b>帯が無い期間＝その担当者の空き</b>です。帯の<b>高さ</b>は同時に走っている課題数（低い=1件／中=2件／高い=3件以上）を表し、2件以上の区間には件数の数字が出ます。マウスを乗せると、その期間に含まれる課題名・合計工数・同時最大件数が表示されます。</span></li>
     </ol>
     <ul class="notes">
-      <li><b>グループの開閉</b>：担当者名の左の <b>▶</b> で開閉できます。「全て開く／全て閉じる」も担当者単位で効きます。</li>
-      <li><b>グループヘッダの表示</b>：担当者名の横に、表示中の子課題数と予定/実績工数の合計（計 ○h/○h）が表示されます。</li>
-      <li><b>空きの見つけ方</b>：一人の担当者の行を縦に見て、バーが途切れている期間が空きです。タスクが1件も無い担当者はグループ自体が表示されません（プロジェクトに無関係な参加者も多く登録されているため、あえて0件表示はしていません）。</li>
-      <li><b>フィルターの引き継ぎ</b>：健全性・状態・「処理済み・完了を隠す」・ステータス・粒度・日付なしを隠す、は案件別ビューと共通の設定がそのまま適用されます（ステータスは子課題の親案件のフェーズで判定します）。</li>
+      <li><b>開閉</b>：担当者名の左の <b>▶</b> で案件行の開閉、案件行の <b>▶</b> で子課題の開閉ができます。<b>「▶ 全て閉じる」で担当者行だけ</b>になるので、全員の空き状況を一画面で見比べられます。「▼ 全て開く」で3階層すべてが開きます。</li>
+      <li><b>担当者行の表示</b>：担当者名の横に、表示中の案件数・子課題数と、予定/実績工数の合計（計 ○h/○h）が表示されます。</li>
+      <li><b>帯の途切れ方</b>：金曜期限の次が月曜開始のように、間が土日だけの場合は空きとみなさず帯がつながります（祝日は考慮できないため、祝日は隙間として表示されます）。</li>
+      <li><b>並び順</b>：担当者内の案件は、その担当者の課題の開始が早い順です。日程が未設定で帯を描けない案件・課題は、それぞれ一番下に課題番号順で並びます。</li>
+      <li><b>空きの見つけ方</b>：担当者行の帯が途切れている期間が空きです。タスクが1件も無い担当者はグループ自体が表示されません（プロジェクトに無関係な参加者も多く登録されているため、あえて0件表示はしていません）。</li>
+      <li><b>フィルターの引き継ぎ</b>：健全性・状態・「処理済み・完了を隠す」・ステータス・粒度・日付なしを隠す、は案件別ビューと共通の設定がそのまま適用されます（ステータスは子課題の親案件のフェーズで判定します）。帯もフィルター後の課題だけを集約するため、「完了を隠す」がオンのときは完了済みの期間は空きとして表示されます。</li>
     </ul>
   </section>
 
@@ -711,6 +729,12 @@
     <ul class="notes">
       <li><b>担当者別・月別割当工数（人月）一覧画面を追加しました</b>（→ <a href="#s8" style="color:var(--accent)">8章</a>）。<br>
         各担当者に月単位で割り当たっている人月（または時間）をマトリクス形式で確認できます。土日を除いた営業日数による日割り按分計算、負荷ヒートマップ（過負荷/適正/余力）、1人月基準時間（144h〜184h）の切替、セルクリックによる内訳確認と詳細編集レイヤー連携、CSVダウンロードに対応しています。</li>
+      <li><b>ガントチャートの「案件 / 課題」欄を広げ、幅を変えられるようにしました</b>（→ <a href="#s7" style="color:var(--accent)">7章</a>）。<br>
+        既定の幅を広げて子課題の件名が読めるようにしたうえで、見出し行の右端の境界線をドラッグして幅を調整できるようにしました（ダブルクリックで既定に戻ります。幅はブラウザに保存されます）。あわせてスケジュール側の目盛りを少し狭め、1画面で見渡せる期間は従来と同等を保っています。</li>
+      <li><b>担当者別ビューを 担当者 → 案件 → 子課題 の3階層にしました</b>（→ <a href="#s7" style="color:var(--accent)">7章</a>）。<br>
+        担当者の下に親案件の行が入り、その下に子課題がぶら下がります。案件行にも開閉ボタンが付くので、同じ名前の子課題がどの案件のものか分かるようになりました。</li>
+      <li><b>担当者行・案件行にスケジュールの集約帯を表示しました</b>（→ <a href="#s7" style="color:var(--accent)">7章</a>）。<br>
+        配下の子課題の期間を1本の帯にまとめて表示します。「▶ 全て閉じる」で担当者行だけを並べると、<b>帯が無い期間＝空き</b>として全員の空き状況を見比べられます。帯の高さは同時に走っている課題数を表し、2件以上の区間には件数が表示されます。</li>
     </ul>
 
     <h3>2026-07-31</h3>
