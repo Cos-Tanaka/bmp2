@@ -120,6 +120,31 @@ Gantt view of the same `/api/issues` payload — no backend involvement, no extr
 - **Bar colour** is health; parents use the backend's `health`, children are judged client-side by `childHealth` (same thresholds as the backend's `calc_health`; `isDoneStatus` children are always green regardless of date). Fill = progress, thin vertical line = date-based expected progress.
 - **Shared state**: the `filter` object and `bpm2-filter` localStorage key are shared with `index.html`, including the `childSort` key this page does not use — it is kept in the object so a round-trip through this page does not drop index.html's setting. Granularity, the undated toggle, the view mode, the assignee multi-select and the left-pane width each use their own separate localStorage keys.
 
+### Monthly Workload (`frontend/html/workload.html`)
+
+Matrix view of monthly allocated workload (man-months or hours) per assignee, calculated from the `/api/issues` snapshot — no backend changes. Reached from the 「📊 月別工数」 header button on any page.
+
+- **Calculation logic** (`countBusinessDays` / `distributeChildHours`):
+  - Child issue's `plannedH` is prorated across months using **business days** (Monday–Friday, excluding weekends) within the child's `start` to `due` period.
+  - Undated issues (no start & due) or dates falling outside the displayed range are collected in the "日付未設定" (Undated) column.
+  - Issues with only `due` or only `start` allocate all hours to that single month.
+- **Conversion & units**:
+  - Displays in **人月 (man-months)** (2 decimal places) or **時間 (hours)** (1 decimal place).
+  - Base hours per man-month selectable: `144h`, `152h`, `160h` (default), `168h`, `176h`, `184h`.
+- **Heatmap coloring**:
+  - `> 1.0 man-month`: Red (overallocated)
+  - `0.8 - 1.0 man-month`: Green (optimal load)
+  - `0.1 - 0.7 man-month`: Yellow (capacity available)
+  - `0.0 man-month`: Gray (free / no task)
+- **Drill-down & editing**:
+  - Clicking any cell opens a breakdown popover listing the parent/child issues allocated to that month with their prorated hours.
+  - Clicking a child issue title opens the shared `ChildModal` (`child-modal.js`) to edit assignee, dates, progress, or log actual hours. Upon save, the matrix updates immediately.
+- **Multi-select assignee filter**:
+  - Checkbox dropdown (same as Gantt assignee mode), persisted in localStorage key `bpm2-workload-assignees`.
+  - Toggle "👤 0件担当者も表示" allows viewing users with zero allocated tasks in the current range.
+- **CSV export**:
+  - Exports the current matrix with UTF-8 BOM for Excel compatibility.
+
 ### nginx (`frontend/nginx.conf`)
 
 Reverse-proxies `/api/` to `http://backend:5000`. Everything else is served from the static root with an SPA fallback. `/health` returns a plain 200 for infra checks.

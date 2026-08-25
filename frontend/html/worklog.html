@@ -77,7 +77,13 @@
 
 <header class="header">
   <div class="logo">BPM<span> / 実施工数確認</span></div>
-  <button class="btn btn-ghost" onclick="toggleTheme()" id="btnTheme">☀ ライト</button>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <a class="btn btn-ghost" href="/index.html" style="text-decoration:none">📋 一覧</a>
+    <a class="btn btn-ghost" href="/gantt.html" style="text-decoration:none">📅 ガント</a>
+    <a class="btn btn-ghost" href="/workload.html" style="text-decoration:none">📊 月別工数</a>
+    <a class="btn btn-ghost" href="/guide.html" target="_blank" rel="noopener" style="text-decoration:none">❓ 使い方</a>
+    <button class="btn btn-ghost" onclick="toggleTheme()" id="btnTheme">☀ ライト</button>
+  </div>
 </header>
 
 <div class="search-bar">

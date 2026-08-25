@@ -206,12 +206,18 @@
 
 <header class="g-header">
   <div class="g-logo">BPM<span> / 使い方ガイド</span></div>
-  <button class="btn-theme" id="btnTheme" onclick="toggleTheme()">☀ ライト</button>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <a class="pill" href="/index.html" style="text-decoration:none">📋 一覧</a>
+    <a class="pill" href="/gantt.html" style="text-decoration:none">📅 ガント</a>
+    <a class="pill" href="/workload.html" style="text-decoration:none">📊 月別工数</a>
+    <a class="pill" href="/worklog.html" target="_blank" rel="noopener" style="text-decoration:none">⏱ 実施工数確認</a>
+    <button class="btn-theme" id="btnTheme" onclick="toggleTheme()">☀ ライト</button>
+  </div>
 </header>
 
 <div class="wrap">
   <h1>BPM 進捗監視盤 ― 使い方ガイド</h1>
-  <p class="lead">本ガイドでは、進捗監視盤（ダッシュボード）の見方、子課題の編集・実績工数の入力、実施工数確認画面の使い方を、サンプル画面付きで説明します。</p>
+  <p class="lead">本ガイドでは、進捗監視盤（ダッシュボード）の見方、子課題の編集・実績工数の入力、実施工数確認画面、ガントチャート、担当者別月別工数一覧の使い方を、サンプル画面付きで説明します。</p>
 
   <nav class="toc">
     <h2>目次</h2>
@@ -223,7 +229,8 @@
       <li><a href="#s5">5. 実績工数を日々入力する</a></li>
       <li><a href="#s6">6. 実施工数確認画面の使い方</a></li>
       <li><a href="#s7">7. ガントチャートで期間を俯瞰する</a></li>
-      <li><a href="#s8">8. リリースノート</a></li>
+      <li><a href="#s8">8. 担当者別・月別工数一覧表で負荷を確認する</a></li>
+      <li><a href="#s9">9. リリースノート</a></li>
     </ol>
   </nav>
 
@@ -234,7 +241,7 @@
     <ul class="notes">
       <li>データは Backlog から自動取得され、約60秒ごとに更新されます（手動更新も可）。</li>
       <li>画面は<b>案件（親課題）単位</b>で一覧表示され、各案件を開くと<b>子課題</b>が展開されます。</li>
-      <li>右上のボタンから<b>ガントチャート</b>、<b>実施工数確認</b>画面、<b>本ガイド</b>、<b>テーマ（ダーク/ライト）切替</b>を開けます。</li>
+      <li>上部のボタンから<b>ガントチャート</b>、<b>月別工数</b>、<b>実施工数確認</b>画面、<b>本ガイド</b>、<b>テーマ（ダーク/ライト）切替</b>を開けます。</li>
     </ul>
   </section>
 
@@ -634,13 +641,94 @@
     </ul>
   </section>
 
-  <!-- ── 8. リリースノート ── -->
+  <!-- ── 8. 担当者別・月別工数一覧表で負荷を確認する ── -->
   <section id="s8">
-    <h2 class="sec">8. リリースノート</h2>
+    <h2 class="sec">8. 担当者別・月別工数一覧表で負荷を確認する</h2>
+    <p>担当者ごとに月単位で割り当たっている工数（人月／時間）をマトリクス（山積み表）形式で可視化する画面です。上部ナビゲーションの「<b>📊 月別工数</b>」から開きます。</p>
+
+    <div class="screen">
+      <div class="screen-bar"><span class="screen-dot r"></span><span class="screen-dot y"></span><span class="screen-dot g"></span><span class="screen-url">http://localhost:3031/workload.html</span></div>
+      <div class="screen-body">
+        <div class="app-header">
+          <div style="display:flex;align-items:center">
+            <div class="logo">BPM<span> / 進捗監視盤</span></div>
+            <div class="project-badge">V2A9 プロジェクト</div>
+          </div>
+          <div class="header-right">
+            <span class="pill"><span class="sync-dot"></span>同期済</span>
+          </div>
+        </div>
+        <div class="filter-bar" style="background:var(--bg3)">
+          <span class="filter-label">表示単位:</span>
+          <button class="chip active">人月</button>
+          <button class="chip">時間 (h)</button>
+          <div class="filter-sep"></div>
+          <span class="filter-label">1人月基準:</span>
+          <span class="pill" style="padding:2px 8px;font-size:11px">160 h / 人月</span>
+          <div class="filter-sep"></div>
+          <button class="pill" style="padding:2px 8px;font-size:11px">👥 担当者: 全員</button>
+          <button class="chip">✅ 完了課題を隠す</button>
+        </div>
+        <div style="padding:12px;overflow-x:auto">
+          <table class="app" style="font-size:11px">
+            <thead>
+              <tr>
+                <th style="width:140px">担当者名</th>
+                <th>2026/04</th>
+                <th>2026/05</th>
+                <th>2026/06</th>
+                <th>2026/07</th>
+                <th>2026/08</th>
+                <th>日付未設定</th>
+                <th>期間合計</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="row-parent">
+                <td><b>👤 山田 太郎</b> <span class="count-badge">5件</span></td>
+                <td style="text-align:right;font-family:var(--mono)">0.85</td>
+                <td style="text-align:right;font-family:var(--mono);color:var(--red);font-weight:700">1.20 🔴</td>
+                <td style="text-align:right;font-family:var(--mono);color:var(--green)">0.95</td>
+                <td style="text-align:right;font-family:var(--mono);color:var(--yellow)">0.40</td>
+                <td style="text-align:right;font-family:var(--mono)">-</td>
+                <td style="text-align:right;font-family:var(--mono)">-</td>
+                <td style="text-align:right;font-family:var(--mono);font-weight:700">3.40</td>
+              </tr>
+              <tr class="row-parent">
+                <td><b>👤 鈴木 花子</b> <span class="count-badge">3件</span></td>
+                <td style="text-align:right;font-family:var(--mono)">0.50</td>
+                <td style="text-align:right;font-family:var(--mono);color:var(--green)">0.80</td>
+                <td style="text-align:right;font-family:var(--mono);color:var(--green)">1.00</td>
+                <td style="text-align:right;font-family:var(--mono);color:var(--red);font-weight:700">1.05 🔴</td>
+                <td style="text-align:right;font-family:var(--mono)">0.70</td>
+                <td style="text-align:right;font-family:var(--mono)">0.25</td>
+                <td style="text-align:right;font-family:var(--mono);font-weight:700">4.30</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <ul class="notes">
+      <li><b>営業日数ベースの日割り按分</b>：子課題の開始日〜期限日をもとに、土日を除外した平日の営業日数比率で月ごとに予定工数を按分して集計します。</li>
+      <li><b>過負荷・余力のヒートマップ</b>：<code>> 1.0人月</code>（赤 🔴 / 過負荷）、<code>0.8〜1.0人月</code>（緑 🟢 / 適正稼働）、<code>0.1〜0.7人月</code>（黄 🟡 / 余力あり）、<code>0.0人月</code>（グレー / 空き）で視覚的に負荷状況を把握できます。</li>
+      <li><b>1人月基準時間の切替</b>：プロジェクトの稼働基準に合わせて 144h / 152h / 160h（標準）/ 168h / 176h / 184h を選択できます。</li>
+      <li><b>セルクリックで内訳確認・編集</b>：各月の数値をタップ/クリックすると、その月に割り当たっている子課題の内訳（案件名・期間・総工数・当月配分）がポップアップ表示されます。子課題名をクリックするとそのまま詳細編集レイヤーが開き、担当者や日程・工数を調整できます。</li>
+      <li><b>担当者複数選択フィルタ</b>：ガントチャートと同様に自チームのメンバーだけをチェックして絞り込めます。</li>
+      <li><b>CSVダウンロード</b>：画面右上の「📥 CSVダウンロード」から、表示中のマトリクス表をExcel等で利用可能なCSV形式で出力できます。</li>
+    </ul>
+  </section>
+
+  <!-- ── 9. リリースノート ── -->
+  <section id="s9">
+    <h2 class="sec">9. リリースノート</h2>
     <p class="lead">機能追加・変更の履歴です。新しいものが上に並びます。</p>
 
     <h3>2026-08-25</h3>
     <ul class="notes">
+      <li><b>担当者別・月別割当工数（人月）一覧画面を追加しました</b>（→ <a href="#s8" style="color:var(--accent)">8章</a>）。<br>
+        各担当者に月単位で割り当たっている人月（または時間）をマトリクス形式で確認できます。土日を除いた営業日数による日割り按分計算、負荷ヒートマップ（過負荷/適正/余力）、1人月基準時間（144h〜184h）の切替、セルクリックによる内訳確認と詳細編集レイヤー連携、CSVダウンロードに対応しています。</li>
       <li><b>ガントチャートの「案件 / 課題」欄を広げ、幅を変えられるようにしました</b>（→ <a href="#s7" style="color:var(--accent)">7章</a>）。<br>
         既定の幅を広げて子課題の件名が読めるようにしたうえで、見出し行の右端の境界線をドラッグして幅を調整できるようにしました（ダブルクリックで既定に戻ります。幅はブラウザに保存されます）。あわせてスケジュール側の目盛りを少し狭め、1画面で見渡せる期間は従来と同等を保っています。</li>
       <li><b>担当者別ビューを 担当者 → 案件 → 子課題 の3階層にしました</b>（→ <a href="#s7" style="color:var(--accent)">7章</a>）。<br>
