@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BPM / 担当者別 月別工数一覧</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/child-modal.css">
+<style>
+  :root {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #1c2128; --bg4: #21262d;
+    --border: #30363d; --border2: #3d444d;
+    --text: #e6edf3; --text2: #8d96a0; --text3: #6e7681;
+    --accent: #388bfd; --accent2: #1f6feb;
+    --green: #3fb950; --yellow: #d29922; --red: #f85149; --purple: #a371f7;
+    --font: 'Noto Sans JP', sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+    color-scheme: dark;
+
+    /* ヒートマップ用背景色 (ダークテーマ) */
+    --hm-over-bg: rgba(248, 81, 73, 0.22);
+    --hm-over-border: rgba(248, 81, 73, 0.45);
+    --hm-over-text: #ff7b72;
+    --hm-fit-bg: rgba(63, 185, 80, 0.18);
+    --hm-fit-border: rgba(63, 185, 80, 0.35);
+    --hm-fit-text: #56d364;
+    --hm-light-bg: rgba(210, 153, 34, 0.12);
+    --hm-light-border: rgba(210, 153, 34, 0.25);
+    --hm-light-text: #e3b341;
+  }
+  [data-theme="light"] {
+    --bg: #ffffff; --bg2: #f6f8fa; --bg3: #eaeef2; --bg4: #f1f3f5;
+    --border: #d0d7de; --border2: #afb8c1;
+    --text: #1f2328; --text2: #57606a; --text3: #8c959f;
+    --accent: #0969da; --accent2: #0550ae;
+    --green: #1a7f37; --yellow: #9a6700; --red: #cf222e; --purple: #8250df;
+    color-scheme: light;
+
+    /* ヒートマップ用背景色 (ライトテーマ) */
+    --hm-over-bg: rgba(207, 34, 46, 0.15);
+    --hm-over-border: rgba(207, 34, 46, 0.35);
+    --hm-over-text: #cf222e;
+    --hm-fit-bg: rgba(26, 127, 55, 0.12);
+    --hm-fit-border: rgba(26, 127, 55, 0.25);
+    --hm-fit-text: #1a7f37;
+    --hm-light-bg: rgba(154, 103, 0, 0.10);
+    --hm-light-border: rgba(154, 103, 0, 0.20);
+    --hm-light-text: #9a6700;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px;
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  /* Header */
+  .header {
+    background: var(--bg2); border-bottom: 1px solid var(--border); flex: none;
+    padding: 12px 24px; display: flex; align-items: center; justify-content: space-between;
+  }
+  .logo { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--accent); letter-spacing: .05em; }
+  .logo span { color: var(--text2); font-weight: 400; }
+  .project-badge {
+    background: var(--bg4); border: 1px solid var(--border2);
+    border-radius: 6px; padding: 3px 10px; font-size: 12px; color: var(--text2); margin-left: 14px;
+  }
+  .header-right { display: flex; align-items: center; gap: 10px; }
+  .sync-info { font-family: var(--mono); font-size: 11px; color: var(--text3); }
+  .sync-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--green);
+    display: inline-block; margin-right: 6px; box-shadow: 0 0 6px var(--green);
+  }
+  .sync-dot.error { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .sync-dot.loading { background: var(--yellow); animation: blink 1s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .btn-refresh, .btn-theme {
+    background: var(--bg4); border: 1px solid var(--border2); border-radius: 6px;
+    color: var(--text2); padding: 4px 12px; font-size: 12px; cursor: pointer;
+    font-family: var(--font); transition: .15s; display: inline-flex; align-items: center; gap: 4px;
+  }
+  .btn-refresh:hover, .btn-theme:hover { border-color: var(--accent); color: var(--text); }
+  .btn-refresh.active-nav { background: var(--accent2); border-color: var(--accent); color: #fff; }
+
+  /* Controls & Toolbar */
+  .toolbar {
+    background: var(--bg2); border-bottom: 1px solid var(--border); flex: none;
+    padding: 10px 24px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .toolbar-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  .toolbar-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .filter-label { font-size: 11px; color: var(--text3); font-weight: 500; }
+  .filter-sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+
+  .chip {
+    background: var(--bg4); border: 1px solid var(--border2); border-radius: 20px;
+    padding: 3px 12px; font-size: 11px; cursor: pointer; color: var(--text2); transition: .15s;
+    user-select: none;
+  }
+  .chip:hover { border-color: var(--accent); color: var(--text); }
+  .chip.active { background: var(--accent2); border-color: var(--accent); color: #fff; }
+
+  .select-filter {
+    background: var(--bg4); border: 1px solid var(--border2); border-radius: 6px;
+    color: var(--text); padding: 3px 8px; font-size: 11px; cursor: pointer;
+    font-family: var(--font); outline: none; transition: .15s;
+  }
+  .select-filter:hover, .select-filter:focus { border-color: var(--accent); }
+
+  /* 担当者 複数選択ドロップダウン */
+  .assignee-multi-wrap { position: relative; display: inline-block; }
+  .assignee-multi-btn {
+    background: var(--bg4); border: 1px solid var(--border2); border-radius: 6px;
+    color: var(--text2); padding: 3px 10px; font-size: 11px; cursor: pointer;
+    font-family: var(--font); transition: .15s; white-space: nowrap;
+  }
+  .assignee-multi-btn:hover { border-color: var(--accent); color: var(--text); }
+  .assignee-multi-panel {
+    display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 200;
+    background: var(--bg2); border: 1px solid var(--border2); border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4); padding: 8px 12px; min-width: 220px; max-height: 360px;
+    overflow-y: auto;
+  }
+  .assignee-multi-panel.open { display: block; }
+  .assignee-multi-panel label {
+    display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 12px;
+    cursor: pointer; border-radius: 4px; color: var(--text);
+  }
+  .assignee-multi-panel label:hover { background: var(--bg3); }
+  .assignee-multi-actions {
+    display: flex; justify-content: space-between; padding-bottom: 6px; margin-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .assignee-multi-actions button {
+    background: none; border: none; color: var(--accent); font-size: 11px; cursor: pointer; padding: 2px 4px;
+  }
+
+  /* 期間ナビゲーション */
+  .period-nav { display: flex; align-items: center; gap: 6px; background: var(--bg3); padding: 3px 8px; border-radius: 8px; border: 1px solid var(--border); }
+  .period-btn {
+    background: var(--bg4); border: 1px solid var(--border2); border-radius: 4px;
+    color: var(--text2); padding: 2px 8px; font-size: 11px; cursor: pointer; transition: .15s;
+  }
+  .period-btn:hover { border-color: var(--accent); color: var(--text); }
+  .period-title { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--text); padding: 0 6px; }
+
+  /* 凡例 */
+  .legend { display: flex; align-items: center; gap: 12px; font-size: 11px; color: var(--text3); }
+  .legend-item { display: inline-flex; align-items: center; gap: 5px; }
+  .legend-box { width: 12px; height: 12px; border-radius: 3px; border: 1px solid transparent; }
+  .legend-box.over { background: var(--hm-over-bg); border-color: var(--hm-over-border); }
+  .legend-box.fit { background: var(--hm-fit-bg); border-color: var(--hm-fit-border); }
+  .legend-box.light { background: var(--hm-light-bg); border-color: var(--hm-light-border); }
+  .legend-box.zero { background: var(--bg4); border-color: var(--border2); }
+
+  /* マトリクス表 */
+  .table-scroll {
+    flex: 1; overflow: auto; position: relative; background: var(--bg);
+  }
+  table.matrix-table {
+    width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px;
+  }
+  table.matrix-table th, table.matrix-table td {
+    padding: 8px 10px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
+    white-space: nowrap; text-align: right;
+  }
+  table.matrix-table th {
+    background: var(--bg2); color: var(--text2); font-weight: 600; position: sticky; top: 0; z-index: 20;
+    border-top: 1px solid var(--border);
+  }
+  table.matrix-table th.th-assignee, table.matrix-table td.td-assignee {
+    text-align: left; position: sticky; left: 0; z-index: 10;
+    min-width: 200px; max-width: 240px; background: var(--bg2);
+    box-shadow: 2px 0 6px rgba(0,0,0,0.15);
+  }
+  table.matrix-table th.th-assignee { z-index: 30; }
+
+  /* 当月列のハイライト */
+  table.matrix-table th.current-month {
+    color: var(--accent); font-weight: 700; border-bottom: 2px solid var(--accent); background: var(--bg3);
+  }
+  table.matrix-table td.current-month-cell {
+    position: relative;
+  }
+  table.matrix-table td.current-month-cell::after {
+    content: ''; position: absolute; inset: 0; border-left: 1px dashed var(--accent);
+    border-right: 1px dashed var(--accent); pointer-events: none; opacity: 0.4;
+  }
+
+  /* セル数値・ヒートマップ */
+  .cell-val {
+    display: block; width: 100%; height: 100%; border-radius: 4px; padding: 4px 6px;
+    font-family: var(--mono); font-size: 12px; font-weight: 500; cursor: pointer;
+    transition: all .15s ease; user-select: none;
+  }
+  .cell-val:hover {
+    filter: brightness(1.2); box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  .cell-val.hm-over { background: var(--hm-over-bg); color: var(--hm-over-text); border: 1px solid var(--hm-over-border); font-weight: 700; }
+  .cell-val.hm-fit { background: var(--hm-fit-bg); color: var(--hm-fit-text); border: 1px solid var(--hm-fit-border); }
+  .cell-val.hm-light { background: var(--hm-light-bg); color: var(--hm-light-text); border: 1px solid var(--hm-light-border); }
+  .cell-val.hm-zero { color: var(--text3); }
+
+  /* 担当者セル内テキスト */
+  .assignee-cell-inner { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .assignee-name { font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+  .assignee-count {
+    font-size: 10px; color: var(--text3); background: var(--bg4); border-radius: 10px;
+    padding: 1px 6px; font-family: var(--mono); flex: none;
+  }
+
+  /* 合計列・合計行 */
+  .total-col { font-weight: 700; background: var(--bg3); }
+  .total-row td {
+    background: var(--bg2); font-weight: 700; position: sticky; bottom: 0; z-index: 25;
+    border-top: 2px solid var(--border2);
+  }
+  .total-row td.td-assignee { z-index: 35; }
+
+  /* ドリルダウン ポップオーバーモーダル */
+  .breakdown-modal-overlay {
+    display: none; position: fixed; inset: 0; z-index: 500;
+    background: rgba(0, 0, 0, 0.65); backdrop-filter: blur(2px);
+    align-items: center; justify-content: center; padding: 20px;
+  }
+  .breakdown-modal-overlay.open { display: flex; }
+  .breakdown-modal {
+    background: var(--bg2); border: 1px solid var(--border2); border-radius: 10px;
+    box-shadow: 0 12px 36px rgba(0,0,0,.6); width: 100%; max-width: 820px; max-height: 85vh;
+    display: flex; flex-direction: column; overflow: hidden; animation: popIn .18s ease-out;
+  }
+  @keyframes popIn { from{transform:scale(.96);opacity:0} to{transform:scale(1);opacity:1} }
+  .breakdown-head {
+    padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex;
+    align-items: center; justify-content: space-between; background: var(--bg3);
+  }
+  .breakdown-title { font-size: 14px; font-weight: 600; color: var(--text); }
+  .breakdown-close {
+    background: none; border: none; font-size: 18px; color: var(--text3); cursor: pointer; padding: 4px 8px; border-radius: 4px;
+  }
+  .breakdown-close:hover { color: var(--text); background: var(--bg4); }
+  .breakdown-body { padding: 16px 20px; overflow-y: auto; flex: 1; }
+  .breakdown-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .breakdown-table th, .breakdown-table td {
+    padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left;
+  }
+  .breakdown-table th { color: var(--text3); font-weight: 600; font-size: 11px; background: var(--bg3); }
+  .breakdown-child-title {
+    color: var(--text); text-decoration: underline; text-decoration-style: dotted; cursor: pointer; font-weight: 500;
+  }
+  .breakdown-child-title:hover { color: var(--accent); text-decoration-style: solid; }
+  .breakdown-parent-key { font-size: 11px; color: var(--text3); font-family: var(--mono); }
+
+  /* 状態表示メッセージ (データなし/ローディング等) */
+  .state-message {
+    padding: 48px; text-align: center; color: var(--text3); font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div style="display:flex;align-items:center;">
+    <div class="logo">BPM <span>/ 進捗監視盤</span></div>
+    <div class="project-badge" id="projectBadge">読み込み中...</div>
+  </div>
+  <div class="header-right">
+    <div class="sync-info"><span class="sync-dot" id="syncDot"></span><span id="syncText">待機中</span></div>
+    <a class="btn-refresh" href="/index.html" style="text-decoration:none">📋 一覧</a>
+    <a class="btn-refresh" href="/gantt.html" style="text-decoration:none">📅 ガント</a>
+    <a class="btn-refresh active-nav" href="/workload.html" style="text-decoration:none">📊 月別工数</a>
+    <a class="btn-refresh" href="/worklog.html" target="_blank" rel="noopener" style="text-decoration:none">⏱ 実施工数確認</a>
+    <a class="btn-refresh" href="/guide.html" target="_blank" rel="noopener" style="text-decoration:none">❓ 使い方</a>
+    <button class="btn-refresh" onclick="fetchData(true)">↻ 更新</button>
+    <button class="btn-theme" onclick="toggleTheme()" id="btnTheme" title="テーマ切り替え">🌙</button>
+  </div>
+</div>
+
+<!-- Toolbar -->
+<div class="toolbar">
+  <!-- Row 1: 期間ナビゲーション & 表示単位設定 -->
+  <div class="toolbar-row">
+    <div class="toolbar-group">
+      <div class="period-nav">
+        <button class="period-btn" onclick="shiftPeriodYears(-1)" title="前年へ">◀◀ 前年</button>
+        <button class="period-btn" onclick="shiftPeriodMonths(-1)" title="前月へ">◀ 前月</button>
+        <span class="period-title" id="periodTitle">2026/04 〜 2027/03</span>
+        <button class="period-btn" onclick="shiftPeriodMonths(1)" title="翌月へ">翌月 ▶</button>
+        <button class="period-btn" onclick="shiftPeriodYears(1)" title="翌年へ">翌年 ▶▶</button>
+        <button class="period-btn" onclick="resetToCurrentMonth()" title="今月へジャンプ" style="font-weight:bold;margin-left:4px">📍今月</button>
+      </div>
+
+      <div class="filter-sep"></div>
+
+      <span class="filter-label">表示単位:</span>
+      <button class="chip active" data-unit="man_month" onclick="setDisplayUnit('man_month', this)">人月</button>
+      <button class="chip" data-unit="hours" onclick="setDisplayUnit('hours', this)">時間 (h)</button>
+
+      <div class="filter-sep"></div>
+
+      <span class="filter-label">1人月基準:</span>
+      <select class="select-filter" id="baseHoursSelect" onchange="setBaseHours(this.value)">
+        <option value="144">144 h / 人月 (18.0日)</option>
+        <option value="152">152 h / 人月 (19.0日)</option>
+        <option value="160" selected>160 h / 人月 (20.0日・標準)</option>
+        <option value="168">168 h / 人月 (21.0日)</option>
+        <option value="176">176 h / 人月 (22.0日)</option>
+        <option value="184">184 h / 人月 (23.0日)</option>
+      </select>
+    </div>
+
+    <div class="toolbar-group">
+      <button class="btn-refresh" onclick="exportCsv()" style="font-size:11px;padding:3px 10px;">📥 CSVダウンロード</button>
+      <div class="legend">
+        <span class="legend-item"><span class="legend-box over"></span> > 1.0 人月 (過負荷)</span>
+        <span class="legend-item"><span class="legend-box fit"></span> 0.8 〜 1.0 (適正)</span>
+        <span class="legend-item"><span class="legend-box light"></span> 0.1 〜 0.7 (余力)</span>
+        <span class="legend-item"><span class="legend-box zero"></span> 0.0 (空き)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 2: フィルタ -->
+  <div class="toolbar-row">
+    <div class="toolbar-group">
+      <!-- 担当者 複数選択 -->
+      <div class="assignee-multi-wrap" id="assigneeMultiWrap">
+        <button type="button" class="assignee-multi-btn" id="assigneeMultiBtn" onclick="toggleAssigneeMultiPanel(event)">
+          👥 担当者: 全員
+        </button>
+        <div class="assignee-multi-panel" id="assigneeMultiPanel"></div>
+      </div>
+
+      <div class="filter-sep"></div>
+
+      <!-- 親案件カスタムステータス -->
+      <span class="filter-label">案件フェーズ:</span>
+      <button class="chip active" data-phase="all" onclick="setPhaseFilter('all', this)">すべて</button>
+      <button class="chip" data-phase="0" onclick="setPhaseFilter('0', this)">見積</button>
+      <button class="chip" data-phase="20" onclick="setPhaseFilter('20', this)">設計</button>
+      <button class="chip" data-phase="30" onclick="setPhaseFilter('30', this)">正式</button>
+      <button class="chip" data-phase="40" onclick="setPhaseFilter('40', this)">開発</button>
+      <button class="chip" data-phase="59" onclick="setPhaseFilter('59', this)">テスト</button>
+      <button class="chip" data-phase="69" onclick="setPhaseFilter('69', this)">本番</button>
+
+      <div class="filter-sep"></div>
+
+      <!-- トグルオプション -->
+      <button class="chip" id="chipHideDone" onclick="toggleHideDone()">✅ 完了課題を隠す</button>
+      <button class="chip" id="chipShowZero" onclick="toggleShowZeroAssignees()">👤 0件担当者も表示</button>
+    </div>
+  </div>
+</div>
+
+<!-- Main Table Container -->
+<div class="table-scroll" id="tableContainer">
+  <div class="state-message">データを読み込み中...</div>
+</div>
+
+<!-- ドリルダウン用 ポップオーバーモーダル -->
+<div class="breakdown-modal-overlay" id="breakdownModal" onclick="if(event.target===this)closeBreakdownModal()">
+  <div class="breakdown-modal" role="dialog">
+    <div class="breakdown-head">
+      <div class="breakdown-title" id="breakdownTitle">割当内訳</div>
+      <button class="breakdown-close" onclick="closeBreakdownModal()" aria-label="閉じる">✕</button>
+    </div>
+    <div class="breakdown-body" id="breakdownBody"></div>
+  </div>
+</div>
+
+<script src="/child-modal.js"></script>
+<script>
+// ── グローバル状態 ──────────────────────────────────
+let allData = [];                          // /api/issues からの全親・子課題
+let projectUsersCache = [];                // /api/project-users の一覧 [{id, name}]
+let selectedAssignees = [];                // 選択された担当者ID配列（数値 or 'unassigned'）
+let currentPhase = 'all';                  // 案件フェーズ絞り込み ('all', '0', '20', etc.)
+let hideDone = false;                      // 完了済み子課題を除外するか
+let showZeroAssignees = false;             // 課題0件の担当者も表示するか
+let displayUnit = 'man_month';             // 'man_month' | 'hours'
+let baseHoursPerMonth = 160;               // 1人月の基準時間 (144, 152, 160, 168, 176, 184)
+let startYearMonth = { year: 2026, month: 4 }; // 表示期間の開始年月 (1-indexed month)
+const DISPLAY_MONTHS_COUNT = 12;           // 表示する月数 (12ヶ月)
+
+const POLL_MS = 60000;
+const ASSIGNEE_MULTI_KEY = 'bpm2-workload-assignees';
+const BASE_HOURS_KEY = 'bpm2-workload-basehours';
+const UNIT_KEY = 'bpm2-workload-unit';
+const HIDE_DONE_KEY = 'bpm2-workload-hidedone';
+const SHOW_ZERO_KEY = 'bpm2-workload-showzero';
+const PHASE_KEY = 'bpm2-workload-phase';
+
+// ── 初期化・ライフサイクル ───────────────────────────
+window.addEventListener('DOMContentLoaded', async () => {
+  initTheme();
+  loadSavedSettings();
+  initPeriodToCurrent();
+
+  // child-modal.js 初期化
+  if (window.ChildModal) {
+    ChildModal.init({
+      findChild: (id) => findChildInAllData(id),
+      onDataChanged: async () => {
+        await fetchData(true);
+      }
+    });
+  }
+
+  await loadProjectUsers();
+  await fetchData();
+  setInterval(() => fetchData(), POLL_MS);
+});
+
+// テーマ管理
+function initTheme() {
+  const t = localStorage.getItem('bpm2-theme') || 'dark';
+  document.documentElement.dataset.theme = t;
+  document.getElementById('btnTheme').textContent = t === 'dark' ? '☀️' : '🌙';
+}
+function toggleTheme() {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem('bpm2-theme', next);
+  document.getElementById('btnTheme').textContent = next === 'dark' ? '☀️' : '🌙';
+}
+
+function loadSavedSettings() {
+  try {
+    const savedAssignees = JSON.parse(localStorage.getItem(ASSIGNEE_MULTI_KEY) || '[]');
+    if (Array.isArray(savedAssignees)) selectedAssignees = savedAssignees;
+  } catch(e){}
+
+  const bh = localStorage.getItem(BASE_HOURS_KEY);
+  if (bh && [144, 152, 160, 168, 176, 184].includes(Number(bh))) {
+    baseHoursPerMonth = Number(bh);
+    document.getElementById('baseHoursSelect').value = String(baseHoursPerMonth);
+  }
+
+  const u = localStorage.getItem(UNIT_KEY);
+  if (u === 'man_month' || u === 'hours') displayUnit = u;
+  document.querySelectorAll('.chip[data-unit]').forEach(c => c.classList.toggle('active', c.dataset.unit === displayUnit));
+
+  const hd = localStorage.getItem(HIDE_DONE_KEY);
+  if (hd !== null) hideDone = hd === '1';
+  document.getElementById('chipHideDone').classList.toggle('active', hideDone);
+
+  const sz = localStorage.getItem(SHOW_ZERO_KEY);
+  if (sz !== null) showZeroAssignees = sz === '1';
+  document.getElementById('chipShowZero').classList.toggle('active', showZeroAssignees);
+
+  const ph = localStorage.getItem(PHASE_KEY);
+  if (ph) currentPhase = ph;
+  document.querySelectorAll('.chip[data-phase]').forEach(c => c.classList.toggle('active', c.dataset.phase === currentPhase));
+
+  updateAssigneeMultiBtnLabel();
+}
+
+function initPeriodToCurrent() {
+  const now = new Date();
+  // 今月を含む12ヶ月（例: 今月が8月なら、4月〜翌3月の年度表示にするか、または今月〜翌11ヶ月にするか。直近数ヶ月前〜未来が自然なので、当月の2ヶ月前〜9ヶ月後を開始にする）
+  let m = now.getMonth() + 1 - 2;
+  let y = now.getFullYear();
+  if (m <= 0) { m += 12; y -= 1; }
+  startYearMonth = { year: y, month: m };
+  updatePeriodTitle();
+}
+
+function updatePeriodTitle() {
+  const months = getDisplayMonthsList();
+  const first = months[0].label;
+  const last = months[months.length - 1].label;
+  document.getElementById('periodTitle').textContent = `${first} 〜 ${last}`;
+}
+
+function shiftPeriodMonths(delta) {
+  let m = startYearMonth.month + delta;
+  let y = startYearMonth.year;
+  while (m > 12) { m -= 12; y += 1; }
+  while (m < 1) { m += 12; y -= 1; }
+  startYearMonth = { year: y, month: m };
+  updatePeriodTitle();
+  renderMatrix();
+}
+
+function shiftPeriodYears(delta) {
+  startYearMonth.year += delta;
+  updatePeriodTitle();
+  renderMatrix();
+}
+
+function resetToCurrentMonth() {
+  initPeriodToCurrent();
+  renderMatrix();
+}
+
+// ── API 取得 ──────────────────────────────────────
+async function loadProjectUsers() {
+  try {
+    const res = await fetch('/api/project-users');
+    if (res.ok) projectUsersCache = await res.json();
+  } catch(e){}
+}
+
+async function fetchData(force = false) {
+  setSyncState('loading');
+  try {
+    const res = await fetch('/api/issues' + (force ? '?t=' + Date.now() : ''));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    allData = await res.json();
+    document.getElementById('projectBadge').textContent =
+      allData.length ? allData[0].id.split('-')[0] + ' プロジェクト' : '';
+    renderMatrix();
+    setSyncState('ok');
+  } catch (e) {
+    setSyncState('error', e.message);
+  }
+}
+
+function setSyncState(state, err = '') {
+  const dot = document.getElementById('syncDot');
+  const txt = document.getElementById('syncText');
+  dot.className = 'sync-dot ' + (state === 'error' ? 'error' : state === 'loading' ? 'loading' : '');
+  if (state === 'ok') txt.textContent = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' 同期済';
+  else if (state === 'loading') txt.textContent = '同期中...';
+  else txt.textContent = 'エラー: ' + err;
+}
+
+// ── データ検索ヘルパー ──────────────────────────────
+function findChildInAllData(childId) {
+  for (const p of allData) {
+    for (const c of p.children || []) {
+      if (c.id === childId) return { child: c, parent: p };
+    }
+  }
+  return null;
+}
+
+// ── 営業日数計算ロジック ──────────────────────────────
+// 土曜日(6)と日曜日(0)を除外した平日日数を返す。
+function countBusinessDays(startDateStr, endDateStr) {
+  if (!startDateStr || !endDateStr) return 0;
+  const s = new Date(startDateStr + 'T00:00:00');
+  const e = new Date(endDateStr + 'T00:00:00');
+  if (isNaN(s.getTime()) || isNaN(e.getTime()) || s > e) return 0;
+
+  let count = 0;
+  const cur = new Date(s);
+  while (cur <= e) {
+    const day = cur.getDay();
+    if (day !== 0 && day !== 6) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  // 全期間が土日の場合はゼロ除算を避けるため最低1日とする
+  return count > 0 ? count : 1;
+}
+
+// 2つの日付文字列の重複期間における営業日数を算出
+function countOverlapBusinessDays(s1Str, e1Str, s2Str, e2Str) {
+  const startMax = s1Str > s2Str ? s1Str : s2Str;
+  const endMin = e1Str < e2Str ? e1Str : e2Str;
+  if (startMax > endMin) return 0;
+  return countBusinessDays(startMax, endMin);
+}
+
+// ── 表示期間（月リスト）の生成 ────────────────────────
+function getDisplayMonthsList() {
+  const list = [];
+  let y = startYearMonth.year;
+  let m = startYearMonth.month;
+  const today = new Date();
+  const currentYm = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}`;
+
+  for (let i = 0; i < DISPLAY_MONTHS_COUNT; i++) {
+    const ymStr = `${y}/${String(m).padStart(2, '0')}`;
+    const ymIso = `${y}-${String(m).padStart(2, '0')}`;
+
+    // 月初日と月末日
+    const startStr = `${ymIso}-01`;
+    const lastDate = new Date(y, m, 0).getDate();
+    const endStr = `${ymIso}-${String(lastDate).padStart(2, '0')}`;
+
+    list.push({
+      key: ymIso,
+      label: ymStr,
+      year: y,
+      month: m,
+      startStr,
+      endStr,
+      isCurrent: ymStr === currentYm
+    });
+
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+  return list;
+}
+
+// ── 子課題の月別工数按分計算 ──────────────────────────
+function distributeChildHours(child, parent, monthsList) {
+  const res = {
+    byMonth: {},       // { 'YYYY-MM': { hours, manMonth } }
+    undatedHours: 0,
+    totalPlannedH: child.plannedH || 0
+  };
+
+  monthsList.forEach(m => {
+    res.byMonth[m.key] = { hours: 0, manMonth: 0 };
+  });
+
+  const planned = child.plannedH || 0;
+  if (planned <= 0) return res;
+
+  const start = child.start;
+  const due = child.due;
+
+  // 1. 日付両方なし
+  if (!start && !due) {
+    res.undatedHours = planned;
+    return res;
+  }
+
+  // 2. 期限日のみ設定
+  if (!start && due) {
+    const ym = due.slice(0, 7);
+    if (res.byMonth[ym]) {
+      res.byMonth[ym].hours += planned;
+      res.byMonth[ym].manMonth = res.byMonth[ym].hours / baseHoursPerMonth;
+    } else {
+      // 表示期間外の月
+      res.undatedHours += planned;
+    }
+    return res;
+  }
+
+  // 3. 開始日のみ設定
+  if (start && !due) {
+    const ym = start.slice(0, 7);
+    if (res.byMonth[ym]) {
+      res.byMonth[ym].hours += planned;
+      res.byMonth[ym].manMonth = res.byMonth[ym].hours / baseHoursPerMonth;
+    } else {
+      res.undatedHours += planned;
+    }
+    return res;
+  }
+
+  // 4. 開始日・期限日の両方あり（営業日数按分）
+  const totalB = countBusinessDays(start, due);
+  if (totalB <= 0) {
+    res.undatedHours = planned;
+    return res;
+  }
+
+  let allocatedSum = 0;
+  monthsList.forEach(m => {
+    const overlapB = countOverlapBusinessDays(start, due, m.startStr, m.endStr);
+    if (overlapB > 0) {
+      const h = planned * (overlapB / totalB);
+      res.byMonth[m.key].hours += h;
+      res.byMonth[m.key].manMonth = res.byMonth[m.key].hours / baseHoursPerMonth;
+      allocatedSum += h;
+    }
+  });
+
+  return res;
+}
+
+// ── フィルタ条件判定 ──────────────────────────────────
+function matchPhase(customStatus, targetPhase) {
+  if (!targetPhase || targetPhase === 'all') return true;
+  if (!customStatus) return false;
+  const code = parseInt(customStatus, 10);
+  if (isNaN(code)) return false;
+  if (targetPhase === '0')  return code < 20;
+  if (targetPhase === '20') return code >= 20 && code < 30;
+  if (targetPhase === '30') return code >= 30 && code < 40;
+  if (targetPhase === '40') return code >= 40 && code < 59;
+  if (targetPhase === '59') return code >= 59 && code < 69;
+  if (targetPhase === '69') return code >= 69;
+  return false;
+}
+
+function isDoneStatus(child) {
+  const statusId = child.statusId;
+  const statusName = child.status || '';
+  return statusId === 3 || statusId === 4 || statusName === '完了' || statusName === '処理済み';
+}
+
+// ── 担当者候補一覧の収集 ──────────────────────────────
+function getAssigneeCandidates() {
+  const map = new Map();
+  projectUsersCache.forEach(u => map.set(u.id, { id: u.id, name: u.name }));
+  allData.forEach(p => {
+    (p.children || []).forEach(c => {
+      if (c.assigneeId && !map.has(c.assigneeId)) {
+        map.set(c.assigneeId, { id: c.assigneeId, name: c.assignee });
+      }
+    });
+  });
+  const list = Array.from(map.values());
+  list.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+  return list;
+}
+
+// ── マトリクス表の集計・描画 ──────────────────────────
+let currentMatrixData = null; // CSV出力やドリルダウン用のキャッシュ
+
+function renderMatrix() {
+  const container = document.getElementById('tableContainer');
+  if (!allData || !allData.length) {
+    container.innerHTML = '<div class="state-message">表示可能な課題データがありません</div>';
+    return;
+  }
+
+  const months = getDisplayMonthsList();
+  const candidates = getAssigneeCandidates();
+
+  // 担当者ごとの集計コンテナを準備
+  // key: assigneeId (数値) または 'unassigned'
+  const userRows = new Map();
+  candidates.forEach(u => {
+    userRows.set(u.id, {
+      id: u.id,
+      name: u.name,
+      tasksCount: 0,
+      byMonth: {},
+      undatedHours: 0,
+      totalHours: 0,
+      breakdown: {} // { 'YYYY-MM': [item, ...], 'undated': [item, ...] }
+    });
+  });
+
+  userRows.set('unassigned', {
+    id: 'unassigned',
+    name: '未割当',
+    tasksCount: 0,
+    byMonth: {},
+    undatedHours: 0,
+    totalHours: 0,
+    breakdown: {}
+  });
+
+  // 各担当者の月別オブジェクトを初期化
+  userRows.forEach(row => {
+    months.forEach(m => {
+      row.byMonth[m.key] = 0;
+      row.breakdown[m.key] = [];
+    });
+    row.breakdown['undated'] = [];
+  });
+
+  // 全課題を走査して集計
+  allData.forEach(parent => {
+    // 案件フェーズのチェック
+    if (!matchPhase(parent.customStatus, currentPhase)) return;
+
+    (parent.children || []).forEach(child => {
+      // 完了非表示フィルタ
+      if (hideDone && isDoneStatus(child)) return;
+
+      const aid = child.assigneeId || 'unassigned';
+      let row = userRows.get(aid);
+      if (!row) {
+        // 万が一候補にないユーザー
+        row = {
+          id: aid,
+          name: child.assignee || '未割当',
+          tasksCount: 0,
+          byMonth: {},
+          undatedHours: 0,
+          totalHours: 0,
+          breakdown: {}
+        };
+        months.forEach(m => { row.byMonth[m.key] = 0; row.breakdown[m.key] = []; });
+        row.breakdown['undated'] = [];
+        userRows.set(aid, row);
+      }
+
+      row.tasksCount++;
+      const dist = distributeChildHours(child, parent, months);
+
+      // 月別工数の加算
+      months.forEach(m => {
+        const h = dist.byMonth[m.key].hours;
+        if (h > 0) {
+          row.byMonth[m.key] += h;
+          row.breakdown[m.key].push({
+            child,
+            parent,
+            allocatedH: h,
+            allocatedMM: h / baseHoursPerMonth
+          });
+        }
+      });
+
+      // 日付未設定工数
+      if (dist.undatedHours > 0) {
+        row.undatedHours += dist.undatedHours;
+        row.breakdown['undated'].push({
+          child,
+          parent,
+          allocatedH: dist.undatedHours,
+          allocatedMM: dist.undatedHours / baseHoursPerMonth
+        });
+      }
+    });
+  });
+
+  // 各行の合計工数を算出
+  userRows.forEach(row => {
+    let sum = 0;
+    months.forEach(m => { sum += row.byMonth[m.key]; });
+    sum += row.undatedHours;
+    row.totalHours = sum;
+  });
+
+  // フィルタリング（担当者選択・0件担当者表示）
+  let displayRows = Array.from(userRows.values());
+
+  // 担当者複数選択フィルタ
+  if (selectedAssignees && selectedAssignees.length > 0) {
+    displayRows = displayRows.filter(r => selectedAssignees.includes(r.id));
+  }
+
+  // 0件担当者の非表示（デフォルトOFF時）
+  if (!showZeroAssignees) {
+    displayRows = displayRows.filter(r => r.tasksCount > 0 || r.id === 'unassigned' && r.totalHours > 0);
+  }
+
+  // ソート：五十音順、未割当は末尾
+  displayRows.sort((a, b) => {
+    if (a.id === 'unassigned') return 1;
+    if (b.id === 'unassigned') return -1;
+    return a.name.localeCompare(b.name, 'ja');
+  });
+
+  // 全体合計行の計算
+  const colTotals = {
+    byMonth: {},
+    undatedHours: 0,
+    totalHours: 0
+  };
+  months.forEach(m => { colTotals.byMonth[m.key] = 0; });
+
+  displayRows.forEach(r => {
+    months.forEach(m => { colTotals.byMonth[m.key] += r.byMonth[m.key]; });
+    colTotals.undatedHours += r.undatedHours;
+    colTotals.totalHours += r.totalHours;
+  });
+
+  currentMatrixData = { months, rows: displayRows, colTotals };
+
+  // HTMLテーブルの構築
+  let html = `<table class="matrix-table">
+    <thead>
+      <tr>
+        <th class="th-assignee">担当者名</th>`;
+
+  months.forEach(m => {
+    const cls = m.isCurrent ? 'current-month' : '';
+    html += `<th class="${cls}">${m.label}${m.isCurrent ? ' (今月)' : ''}</th>`;
+  });
+
+  html += `<th>日付未設定</th>
+        <th class="total-col">期間合計</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  if (displayRows.length === 0) {
+    html += `<tr><td colspan="${months.length + 3}" style="text-align:center;padding:32px;color:var(--text3)">該当する担当者・課題がありません</td></tr>`;
+  } else {
+    displayRows.forEach(row => {
+      html += `<tr>
+        <td class="td-assignee">
+          <div class="assignee-cell-inner">
+            <span class="assignee-name" title="${escHtml(row.name)}">${row.id === 'unassigned' ? '👤 未割当' : '👤 ' + escHtml(row.name)}</span>
+            <span class="assignee-count" title="課題件数">${row.tasksCount}件</span>
+          </div>
+        </td>`;
+
+      // 各月セル
+      months.forEach(m => {
+        const h = row.byMonth[m.key];
+        const valStr = formatCellVal(h);
+        const mm = h / baseHoursPerMonth;
+        const hmCls = getHeatmapClass(mm, h);
+        const currentCls = m.isCurrent ? 'current-month-cell' : '';
+
+        html += `<td class="${currentCls}">
+          <span class="cell-val ${hmCls}" onclick="openBreakdown('${row.id}', '${m.key}', '${m.label}')" title="クリックで内訳を表示">
+            ${valStr}
+          </span>
+        </td>`;
+      });
+
+      // 日付未設定
+      const undatedVal = formatCellVal(row.undatedHours);
+      html += `<td>
+        <span class="cell-val ${row.undatedHours > 0 ? 'hm-light' : 'hm-zero'}" onclick="openBreakdown('${row.id}', 'undated', '日付未設定')" title="クリックで内訳を表示">
+          ${undatedVal}
+        </span>
+      </td>`;
+
+      // 行合計
+      const totalVal = formatCellVal(row.totalHours);
+      html += `<td class="total-col">
+        <span class="cell-val" style="font-weight:700">${totalVal}</span>
+      </td></tr>`;
+    });
+  }
+
+  html += `</tbody>
+    <tfoot>
+      <tr class="total-row">
+        <td class="td-assignee">月別合計 (全体)</td>`;
+
+  months.forEach(m => {
+    const sumH = colTotals.byMonth[m.key];
+    const valStr = formatCellVal(sumH);
+    html += `<td><span class="cell-val" style="font-weight:700">${valStr}</span></td>`;
+  });
+
+  html += `<td><span class="cell-val" style="font-weight:700">${formatCellVal(colTotals.undatedHours)}</span></td>
+      <td class="total-col"><span class="cell-val" style="font-weight:700;font-size:13px">${formatCellVal(colTotals.totalHours)}</span></td>
+    </tr>
+  </tfoot>
+  </table>`;
+
+  container.innerHTML = html;
+}
+
+// ── 数値フォーマット & ヒートマップ判定 ────────────────
+function formatCellVal(hours) {
+  if (hours <= 0.001) return '-';
+  if (displayUnit === 'man_month') {
+    const mm = hours / baseHoursPerMonth;
+    return mm.toFixed(2);
+  } else {
+    return hours.toFixed(1) + 'h';
+  }
+}
+
+function getHeatmapClass(manMonth, hours) {
+  if (hours <= 0.001) return 'hm-zero';
+  if (manMonth > 1.0) return 'hm-over';
+  if (manMonth >= 0.8) return 'hm-fit';
+  if (manMonth >= 0.1) return 'hm-light';
+  return 'hm-zero';
+}
+
+// ── コントロール操作ハンドラ ────────────────────────────
+function setDisplayUnit(unit, btn) {
+  displayUnit = unit;
+  document.querySelectorAll('.chip[data-unit]').forEach(c => c.classList.toggle('active', c === btn));
+  try { localStorage.setItem(UNIT_KEY, unit); } catch(e){}
+  renderMatrix();
+}
+
+function setBaseHours(val) {
+  baseHoursPerMonth = Number(val);
+  try { localStorage.setItem(BASE_HOURS_KEY, String(baseHoursPerMonth)); } catch(e){}
+  renderMatrix();
+}
+
+function setPhaseFilter(phase, btn) {
+  currentPhase = phase;
+  document.querySelectorAll('.chip[data-phase]').forEach(c => c.classList.toggle('active', c === btn));
+  try { localStorage.setItem(PHASE_KEY, phase); } catch(e){}
+  renderMatrix();
+}
+
+function toggleHideDone() {
+  hideDone = !hideDone;
+  document.getElementById('chipHideDone').classList.toggle('active', hideDone);
+  try { localStorage.setItem(HIDE_DONE_KEY, hideDone ? '1' : '0'); } catch(e){}
+  renderMatrix();
+}
+
+function toggleShowZeroAssignees() {
+  showZeroAssignees = !showZeroAssignees;
+  document.getElementById('chipShowZero').classList.toggle('active', showZeroAssignees);
+  try { localStorage.setItem(SHOW_ZERO_KEY, showZeroAssignees ? '1' : '0'); } catch(e){}
+  renderMatrix();
+}
+
+// ── 担当者複数選択ドロップダウン ───────────────────────
+function toggleAssigneeMultiPanel(ev) {
+  ev.stopPropagation();
+  const panel = document.getElementById('assigneeMultiPanel');
+  const willOpen = !panel.classList.contains('open');
+  if (willOpen) renderAssigneeMultiPanel();
+  panel.classList.toggle('open', willOpen);
+}
+
+document.addEventListener('click', (ev) => {
+  const wrap = document.getElementById('assigneeMultiWrap');
+  if (wrap && !wrap.contains(ev.target)) {
+    document.getElementById('assigneeMultiPanel').classList.remove('open');
+  }
+});
+
+function renderAssigneeMultiPanel() {
+  const panel = document.getElementById('assigneeMultiPanel');
+  const candidates = getAssigneeCandidates();
+  const isChecked = (val) => selectedAssignees.includes(val);
+  let html = `<div class="assignee-multi-actions">
+      <button type="button" onclick="clearAssigneeMulti()">全解除</button>
+    </div>`;
+  html += candidates.map(u =>
+    `<label><input type="checkbox" ${isChecked(u.id) ? 'checked' : ''} onchange="toggleAssigneeMultiValue(${u.id}, this.checked)"> ${escHtml(u.name)}</label>`
+  ).join('');
+  html += `<label><input type="checkbox" ${isChecked('unassigned') ? 'checked' : ''} onchange="toggleAssigneeMultiValue('unassigned', this.checked)"> 未割当</label>`;
+  panel.innerHTML = html;
+}
+
+function toggleAssigneeMultiValue(val, checked) {
+  if (checked) {
+    if (!selectedAssignees.includes(val)) selectedAssignees.push(val);
+  } else {
+    selectedAssignees = selectedAssignees.filter(v => v !== val);
+  }
+  try { localStorage.setItem(ASSIGNEE_MULTI_KEY, JSON.stringify(selectedAssignees)); } catch (e) {}
+  updateAssigneeMultiBtnLabel();
+  renderMatrix();
+}
+
+function clearAssigneeMulti() {
+  selectedAssignees = [];
+  try { localStorage.setItem(ASSIGNEE_MULTI_KEY, JSON.stringify(selectedAssignees)); } catch (e) {}
+  renderAssigneeMultiPanel();
+  updateAssigneeMultiBtnLabel();
+  renderMatrix();
+}
+
+function updateAssigneeMultiBtnLabel() {
+  const btn = document.getElementById('assigneeMultiBtn');
+  if (!btn) return;
+  btn.textContent = selectedAssignees.length ? `👥 担当者: ${selectedAssignees.length}名` : '👥 担当者: 全員';
+}
+
+// ── ドリルダウン内訳ポップオーバー ────────────────────
+function openBreakdown(assigneeId, monthKey, monthLabel) {
+  if (!currentMatrixData) return;
+  const row = currentMatrixData.rows.find(r => String(r.id) === String(assigneeId));
+  if (!row) return;
+
+  const items = row.breakdown[monthKey] || [];
+  const title = `👤 ${row.name} - ${monthLabel} の割当課題一覧 (${items.length}件)`;
+  document.getElementById('breakdownTitle').textContent = title;
+
+  let totalAllocH = 0;
+  items.forEach(it => totalAllocH += it.allocatedH);
+  const totalAllocMM = totalAllocH / baseHoursPerMonth;
+
+  let html = '';
+  if (items.length === 0) {
+    html = '<div style="text-align:center;padding:24px;color:var(--text3)">割当課題はありません</div>';
+  } else {
+    html = `<div style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;background:var(--bg3);padding:8px 12px;border-radius:6px;">
+        <span style="font-size:12px;color:var(--text2)">当月合計:</span>
+        <span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text)">${totalAllocMM.toFixed(2)} 人月 (${totalAllocH.toFixed(1)} h)</span>
+      </div>
+      <table class="breakdown-table">
+        <thead>
+          <tr>
+            <th>親案件 / 課題キー</th>
+            <th>子課題名 (クリックで詳細編集)</th>
+            <th>期間</th>
+            <th style="text-align:right">総予定工数</th>
+            <th style="text-align:right">当月配分</th>
+            <th style="text-align:center">状態</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+    items.forEach(it => {
+      const c = it.child;
+      const p = it.parent;
+      const rangeStr = (c.start || c.due) ? `${c.start || '未設定'} 〜 ${c.due || '未設定'}` : '期間未設定';
+      const allocMM = it.allocatedMM.toFixed(2);
+      const allocH = it.allocatedH.toFixed(1);
+
+      html += `<tr>
+        <td>
+          <div class="breakdown-parent-key">${escHtml(p.id)}</div>
+          <div style="font-size:11px;color:var(--text2);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(p.title)}">${escHtml(p.title)}</div>
+        </td>
+        <td>
+          <div style="font-size:11px;font-family:var(--mono);color:var(--accent)">${escHtml(c.id)}</div>
+          <span class="breakdown-child-title" onclick="openChildDetailFromBreakdown('${escHtml(c.id)}')">${escHtml(c.title)}</span>
+        </td>
+        <td style="font-size:11px;font-family:var(--mono);white-space:nowrap">${rangeStr}</td>
+        <td style="text-align:right;font-family:var(--mono);font-size:11px">${(c.plannedH || 0).toFixed(1)} h</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:600;color:var(--text)">${allocMM} 人月<br><span style="font-size:10px;color:var(--text3);font-weight:400">(${allocH} h)</span></td>
+        <td style="text-align:center"><span style="font-size:10px;background:var(--bg4);border:1px solid var(--border2);border-radius:4px;padding:2px 6px;">${escHtml(c.status || '-')}</span></td>
+      </tr>`;
+    });
+
+    html += `</tbody></table>`;
+  }
+
+  document.getElementById('breakdownBody').innerHTML = html;
+  document.getElementById('breakdownModal').classList.add('open');
+}
+
+function closeBreakdownModal() {
+  document.getElementById('breakdownModal').classList.remove('open');
+}
+
+function openChildDetailFromBreakdown(childId) {
+  closeBreakdownModal();
+  if (window.ChildModal && typeof window.ChildModal.open === 'function') {
+    ChildModal.open(childId);
+  } else if (typeof window.openChildModal === 'function') {
+    openChildModal(childId);
+  }
+}
+
+// ── CSV エクスポート ──────────────────────────────────
+function exportCsv() {
+  if (!currentMatrixData) return;
+  const { months, rows, colTotals } = currentMatrixData;
+
+  const header = ['担当者', ...months.map(m => m.label), '日付未設定', '合計'];
+  const csvRows = [];
+  csvRows.push(header);
+
+  rows.forEach(r => {
+    const rowData = [
+      r.name,
+      ...months.map(m => {
+        const h = r.byMonth[m.key];
+        return displayUnit === 'man_month' ? (h / baseHoursPerMonth).toFixed(2) : h.toFixed(1);
+      }),
+      displayUnit === 'man_month' ? (r.undatedHours / baseHoursPerMonth).toFixed(2) : r.undatedHours.toFixed(1),
+      displayUnit === 'man_month' ? (r.totalHours / baseHoursPerMonth).toFixed(2) : r.totalHours.toFixed(1),
+    ];
+    csvRows.push(rowData);
+  });
+
+  // 合計行
+  const totalRow = [
+    '月別合計',
+    ...months.map(m => {
+      const h = colTotals.byMonth[m.key];
+      return displayUnit === 'man_month' ? (h / baseHoursPerMonth).toFixed(2) : h.toFixed(1);
+    }),
+    displayUnit === 'man_month' ? (colTotals.undatedHours / baseHoursPerMonth).toFixed(2) : colTotals.undatedHours.toFixed(1),
+    displayUnit === 'man_month' ? (colTotals.totalHours / baseHoursPerMonth).toFixed(2) : colTotals.totalHours.toFixed(1),
+  ];
+  csvRows.push(totalRow);
+
+  const csvContent = '\uFEFF' + csvRows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `BPM2_担当者別月別工数_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+// ── ユーティリティ ──────────────────────────────────
+function escHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+</script>
+</body>
+</html>
