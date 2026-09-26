@@ -856,12 +856,110 @@ def api_worklog_search():
         result = [{
             "parentKey":   r["parent_key"],
             "parentTitle": r["parent_title"],
-            "parentUrl":   f"https://{SPACE}/view/{r['parent_key']}",
+            # 固定作業区分（FIX-*）は Backlog に課題が無いのでリンクを返さない
+            "parentUrl":   "" if r["parent_key"].startswith("FIX-") else f"https://{SPACE}/view/{r['parent_key']}",
             "name":        r["name"],
             "day":         r["day"],
             "hours":       round(r["total_hours"], 2),
         } for r in rows]
         return jsonify(result)
+    except Exception as e:
+        log.exception("Unexpected error")
+        abort(500, description=str(e))
+
+
+# ── 固定作業区分の実績（Backlog に存在しない作業）─────────────
+# worklog テーブルに parent_key / child_key ＝区分キーで保存し、Backlog へは一切連動しない。
+# 保守作業（FIX-MAINT）は別途スプレッドシートから取り込む予定のため、ここでは登録対象外。
+FIXED_CATEGORIES = {
+    "FIX-MGMT":    "管理業務",
+    "FIX-EDU":     "開発環境構築／カリキュラム受講",
+    "FIX-IMPROVE": "業務改善／品質改善作業",
+    "FIX-HATPJ":   "HATPJ業務",
+    "FIX-OTHER":   "ASPIT外作業",
+}
+FIXED_HOURS_MAX = 24
+
+
+def _parse_fixed_target(name_raw, date_raw) -> tuple:
+    name = (name_raw or "").strip()
+    if not name:
+        abort(400, description="担当者は必須です")
+    try:
+        day = datetime.date.fromisoformat((date_raw or "").strip())
+    except ValueError:
+        abort(400, description="日付の形式が不正です（YYYY-MM-DD）")
+    return name, day.isoformat()
+
+
+def _get_fixed_hours(conn, name: str, day: str) -> dict:
+    rows = conn.execute(
+        "SELECT parent_key, SUM(hours) AS h FROM worklog"
+        " WHERE deleted_at IS NULL AND name = ? AND date(added_at) = ?"
+        f" AND parent_key IN ({','.join('?' * len(FIXED_CATEGORIES))})"
+        " GROUP BY parent_key",
+        (name, day, *FIXED_CATEGORIES),
+    ).fetchall()
+    return {r["parent_key"]: round(r["h"], 2) for r in rows}
+
+
+@app.route("/api/fixed-worklog", methods=["GET"])
+def api_fixed_worklog_get():
+    """担当者・日付の固定区分工数を返す（登録モーダルの初期表示用）。{ "FIX-MGMT": 1.5, ... }"""
+    name, day = _parse_fixed_target(request.args.get("name"), request.args.get("date"))
+    with get_db() as conn:
+        return jsonify(_get_fixed_hours(conn, name, day))
+
+
+@app.route("/api/fixed-worklog", methods=["PUT"])
+def api_fixed_worklog_put():
+    """
+    担当者・日付の固定区分工数を登録する（SQLite のみ。Backlog には連動しない）。
+    body(JSON): { "name": str, "date": "YYYY-MM-DD", "hours": { "FIX-MGMT": number, ... } }
+    - 送られた区分は、その担当者・日付の既存値を論理削除してから置き換える（二重計上を防ぐ）。
+      0 を送るとその区分は未登録に戻る。送られなかった区分は変更しない。
+    - 各工数は 0〜24 時間、0.25 時間単位。
+    """
+    body = request.get_json(silent=True) or {}
+    name, day = _parse_fixed_target(body.get("name"), body.get("date"))
+    raw = body.get("hours")
+    if not isinstance(raw, dict) or not raw:
+        abort(400, description="工数が指定されていません")
+
+    hours = {}
+    for key, val in raw.items():
+        if key not in FIXED_CATEGORIES:
+            abort(400, description=f"不明な作業区分です: {key}")
+        label = FIXED_CATEGORIES[key]
+        try:
+            h = float(val if val not in (None, "") else 0)
+        except (TypeError, ValueError):
+            abort(400, description=f"{label} は数値で入力してください")
+        if h < 0 or h > FIXED_HOURS_MAX:
+            abort(400, description=f"{label} は 0〜{FIXED_HOURS_MAX} 時間で入力してください")
+        if abs(h * 4 - round(h * 4)) > 1e-9:
+            abort(400, description=f"{label} は 0.25 時間単位で入力してください")
+        hours[key] = h
+
+    now = now_jst_iso()
+    # 日付の集計は date(added_at) で行うため、時刻は登録時刻を借りて日付だけ指定日にする
+    added_at = f"{day}T{now[11:]}"
+    try:
+        with get_db() as conn:
+            for key, h in hours.items():
+                conn.execute(
+                    "UPDATE worklog SET deleted_at = ?"
+                    " WHERE deleted_at IS NULL AND name = ? AND date(added_at) = ? AND parent_key = ?",
+                    (now, name, day, key),
+                )
+                if h > 0:
+                    conn.execute(
+                        "INSERT INTO worklog (parent_key, parent_title, child_key, name, added_at, hours)"
+                        " VALUES (?, ?, ?, ?, ?, ?)",
+                        (key, FIXED_CATEGORIES[key], key, name, added_at, h),
+                    )
+            result = _get_fixed_hours(conn, name, day)
+        return jsonify({"ok": True, "hours": result})
     except Exception as e:
         log.exception("Unexpected error")
         abort(500, description=str(e))
