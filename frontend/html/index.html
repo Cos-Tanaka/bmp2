@@ -183,6 +183,7 @@
   .hours-actual-edit:hover { color: var(--accent); }
 </style>
 <link rel="stylesheet" href="child-modal.css">
+<link rel="stylesheet" href="fixed-modal.css">
 </head>
 <body>
 
@@ -198,6 +199,7 @@
     <a class="btn-refresh" href="/worklog-matrix.html" style="text-decoration:none">🗓 日別実績</a>
     <a class="btn-refresh" href="/worklog.html" target="_blank" rel="noopener" style="text-decoration:none">⏱ 実施工数確認</a>
     <a class="btn-refresh" href="/guide.html" target="_blank" rel="noopener" style="text-decoration:none">❓ 使い方</a>
+    <button class="btn-refresh" onclick="openFixedModal()">✏️ 固定作業の工数登録</button>
     <button class="btn-theme" id="btnTheme" onclick="toggleTheme()">☀ ライト</button>
     <button class="btn-refresh" onclick="fetchData(true)">↻ 更新</button>
   </div>
@@ -328,6 +330,7 @@
 </div>
 
 <script src="child-modal.js"></script>
+<script src="fixed-modal.js"></script>
 <script>
 // ── 状態 ──────────────────────────────────────────
 let allData = [];
@@ -846,6 +849,7 @@ function applyTheme(theme) {
 applyTheme(localStorage.getItem('bpm2-theme') || 'dark');
 loadFilter();
 applyFilterUI();
+FixedModal.init();
 ChildModal.init({
   findChild,
   onDataChanged: () => fetchData(true),
