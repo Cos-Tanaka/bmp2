@@ -11,6 +11,8 @@ services:
       - BACKLOG_PROJECT_KEY=${BACKLOG_PROJECT_KEY}  # 例: ASPIT
       - CACHE_TTL=${CACHE_TTL:-60}            # キャッシュ秒数（デフォルト60秒）
       - DB_PATH=/app/data/worklog.db          # 実績工数 入力履歴の SQLite 保存先
+      - MAINTENANCE_SHEET_ID=${MAINTENANCE_SHEET_ID:-}    # 保守作業実績を取り込む Google スプレッドシートID
+      - MAINTENANCE_SHEET_GID=${MAINTENANCE_SHEET_GID:-0} # 「担当者別保守工数」シートのgid
     volumes:
       - bpm-data:/app/data                    # SQLite 永続化
     networks:
