@@ -241,6 +241,8 @@
     <button class="btn-refresh" onclick="openFixedModal()" style="font-size:11px;padding:3px 10px;">✏️ 固定作業の工数登録</button>
     <span class="note">※ BPMの実績入力（日時付き）で登録された工数のみ集計</span>
     <button class="btn-refresh" onclick="exportCsv()" style="font-size:11px;padding:3px 10px;">📥 CSVダウンロード</button>
+    <button class="btn-refresh" onclick="importMaintenanceHours()" id="btnMaintImport" style="font-size:11px;padding:3px 10px;">🔄 保守工数を取得</button>
+    <span class="note" id="maintImportMsg"></span>
   </div>
 </div>
 
@@ -412,6 +414,30 @@ async function fetchData() {
     setSyncState('error', e.message);
   }
 }
+// ── 保守作業（FIX-MAINT）取り込み ─────────────────────
+// シートは月度が変わると過去分を参照できないため、取得タイミングをこのボタンでユーザーに委ねる。
+async function importMaintenanceHours() {
+  const btn = document.getElementById('btnMaintImport');
+  const msg = document.getElementById('maintImportMsg');
+  btn.disabled = true;
+  msg.style.color = '';
+  msg.textContent = '取得中...';
+  try {
+    const res = await fetch('/api/fixed-worklog/maintenance-import', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    msg.textContent = `✅ ${data.month} の保守作業を取り込みました（${data.people}名 / ${data.entries}件 / 計${data.totalHours}h）`;
+    const [y, m] = data.month.split('-').map(Number);
+    ym = { year: y, month: m };
+    await fetchData();
+  } catch (e) {
+    msg.style.color = '#e53e3e';
+    msg.textContent = '取得に失敗しました: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function setSyncState(state, err = '') {
   const dot = document.getElementById('syncDot');
   const txt = document.getElementById('syncText');

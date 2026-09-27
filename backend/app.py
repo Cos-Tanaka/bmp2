@@ -4,6 +4,8 @@ Backlog API からデータを取得し、フロントエンド向けに整形�
 """
 import os
 import re
+import csv
+import io
 import json
 import time
 import sqlite3
@@ -34,6 +36,8 @@ PROJECT    = os.environ["BACKLOG_PROJECT_KEY"]
 CACHE_TTL  = int(os.environ.get("CACHE_TTL", 60))
 BASE_URL   = f"https://{SPACE}/api/v2"
 DB_PATH    = os.environ.get("DB_PATH", "/app/data/worklog.db")
+MAINTENANCE_SHEET_ID  = os.environ.get("MAINTENANCE_SHEET_ID", "")   # 保守作業実績の取り込み元スプレッドシートID
+MAINTENANCE_SHEET_GID = os.environ.get("MAINTENANCE_SHEET_GID", "0")  # 「担当者別保守工数」シートのgid
 
 # ── シンプルインメモリキャッシュ ────────────────────
 # project_id / custom_fields など「めったに変わらない」値の短期キャッシュに使う。
@@ -960,6 +964,119 @@ def api_fixed_worklog_put():
                     )
             result = _get_fixed_hours(conn, name, day)
         return jsonify({"ok": True, "hours": result})
+    except Exception as e:
+        log.exception("Unexpected error")
+        abort(500, description=str(e))
+
+
+MAINTENANCE_CATEGORY_KEY   = "FIX-MAINT"
+MAINTENANCE_CATEGORY_LABEL = "保守作業"
+
+
+def _fetch_maintenance_csv() -> str:
+    if not MAINTENANCE_SHEET_ID:
+        abort(500, description="MAINTENANCE_SHEET_ID が設定されていません")
+    url = (
+        f"https://docs.google.com/spreadsheets/d/{MAINTENANCE_SHEET_ID}"
+        f"/export?format=csv&gid={MAINTENANCE_SHEET_GID}"
+    )
+    try:
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        abort(502, description=f"スプレッドシートの取得に失敗しました: {e}")
+    return resp.text
+
+
+def _parse_maintenance_csv(text: str) -> tuple:
+    """
+    「担当者別保守工数」シートの CSV を (year, month, day_cols, people, entries) に変換する。
+    行0: ["", "YYYY年M月", "", "M/D", "M/D", ...]（日付ヘッダ）
+    行1: 曜日行（未使用）
+    行2: 全員合計行（B列が空なのでデータ行から自然に除外される）
+    行3以降: [社員ID, 氏名, 月合計, 日別時間...]
+    """
+    rows = list(csv.reader(io.StringIO(text)))
+    if not rows:
+        abort(502, description="スプレッドシートが空です")
+
+    header = rows[0]
+    m = re.match(r"(\d+)年(\d+)月", (header[1] if len(header) > 1 else "").strip())
+    if not m:
+        abort(502, description="年月ヘッダーを解析できませんでした")
+    year, month = int(m.group(1)), int(m.group(2))
+
+    day_cols = []  # [(列index, "YYYY-MM-DD"), ...]
+    for idx in range(3, len(header)):
+        dm = re.match(r"\d+/(\d+)$", (header[idx] or "").strip())
+        if not dm:
+            continue
+        try:
+            date_iso = datetime.date(year, month, int(dm.group(1))).isoformat()
+        except ValueError:
+            continue
+        day_cols.append((idx, date_iso))
+
+    people = set()
+    entries = []  # [(name, "YYYY-MM-DD", hours), ...]
+    for row in rows[3:]:
+        if len(row) < 2 or not row[1].strip():
+            continue
+        name = row[1].strip()
+        people.add(name)
+        for idx, date_iso in day_cols:
+            if idx >= len(row):
+                continue
+            raw = (row[idx] or "").strip()
+            if not raw:
+                continue
+            try:
+                hours = float(raw)
+            except ValueError:
+                continue
+            if hours > 0:
+                entries.append((name, date_iso, hours))
+
+    return year, month, day_cols, people, entries
+
+
+@app.route("/api/fixed-worklog/maintenance-import", methods=["POST"])
+def api_fixed_worklog_maintenance_import():
+    """
+    保守作業（FIX-MAINT）を Google スプレッドシートから取り込む（SQLite のみ。Backlog には連動しない）。
+    連携シートは月度が変わると過去分を参照できなくなるため、取得タイミングはユーザーがボタンで決める。
+    シート上に現れる (氏名, 日付) の組ごとに既存の FIX-MAINT を論理削除してから置き換えるため、
+    同じ月を何度取り込んでも二重計上しない。
+    """
+    text = _fetch_maintenance_csv()
+    year, month, day_cols, people, entries = _parse_maintenance_csv(text)
+
+    now = now_jst_iso()
+    total_hours = 0.0
+    try:
+        with get_db() as conn:
+            for name in people:
+                for _, date_iso in day_cols:
+                    conn.execute(
+                        "UPDATE worklog SET deleted_at = ?"
+                        " WHERE deleted_at IS NULL AND name = ? AND date(added_at) = ? AND parent_key = ?",
+                        (now, name, date_iso, MAINTENANCE_CATEGORY_KEY),
+                    )
+            for name, date_iso, hours in entries:
+                added_at = f"{date_iso}T{now[11:]}"
+                conn.execute(
+                    "INSERT INTO worklog (parent_key, parent_title, child_key, name, added_at, hours)"
+                    " VALUES (?, ?, ?, ?, ?, ?)",
+                    (MAINTENANCE_CATEGORY_KEY, MAINTENANCE_CATEGORY_LABEL, MAINTENANCE_CATEGORY_KEY, name, added_at, hours),
+                )
+                total_hours += hours
+        return jsonify({
+            "ok": True,
+            "month": f"{year:04d}-{month:02d}",
+            "people": len(people),
+            "entries": len(entries),
+            "totalHours": round(total_hours, 2),
+        })
     except Exception as e:
         log.exception("Unexpected error")
         abort(500, description=str(e))
