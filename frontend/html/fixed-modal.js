@@ -19,6 +19,7 @@
 
   let opts = {};
   let loadSeq = 0;   // 担当者・日付を続けて変えたとき、古い読み込み結果で上書きしないための連番
+  let readonlyHours = 0;   // 同じ担当者・日付の保守作業＋他案件の工数（表示のみ。合計に加算する）
 
   const MODAL_HTML = `
 <div class="fx-overlay" id="fxModal" onclick="if(event.target===this)closeFixedModal()">
@@ -42,9 +43,16 @@
       </div>
       <div class="fx-sep"></div>
       <div id="fxHourRows" style="display:flex;flex-direction:column;gap:10px"></div>
+      <div class="fx-row">
+        <label>固定作業 小計</label>
+        <span class="fx-total" id="fxSubtotal">0</span>
+        <span class="unit">h</span>
+      </div>
+      <div class="fx-sep"></div>
+      <div id="fxReadonlyRows" style="display:flex;flex-direction:column;gap:6px"></div>
       <div class="fx-sep"></div>
       <div class="fx-row">
-        <label>合計</label>
+        <label>合計（その日の全工数）</label>
         <span class="fx-total" id="fxTotal">0</span>
         <span class="unit">h</span>
       </div>
@@ -118,9 +126,26 @@
   function inputs() {
     return INPUT_KEYS.map(k => document.getElementById('fx_' + k));
   }
+  function fmtH(h) { return String(Math.round(h * 100) / 100); }
   function updateTotal() {
     const sum = inputs().reduce((a, el) => a + (Number(el.value) || 0), 0);
-    document.getElementById('fxTotal').textContent = String(Math.round(sum * 100) / 100);
+    document.getElementById('fxSubtotal').textContent = fmtH(sum);
+    document.getElementById('fxTotal').textContent = fmtH(sum + readonlyHours);
+  }
+
+  // 保守作業（スプレッドシート取り込み）と Backlog 案件の工数を表示のみで描画する
+  function renderReadonly(maint, projects) {
+    const other = projects.reduce((a, p) => a + p.hours, 0);
+    readonlyHours = maint + other;
+    const row = (label, h, cls = '') => `<div class="fx-row fx-ro ${cls}">
+        <label>${label}</label>
+        <span class="fx-ro-val">${fmtH(h)}</span>
+        <span class="unit">h</span>
+      </div>`;
+    document.getElementById('fxReadonlyRows').innerHTML =
+      row('保守作業 <span class="fx-ro-note">取込値・変更不可</span>', maint) +
+      row('他案件（Backlog） <span class="fx-ro-note">変更不可</span>', other) +
+      projects.map(p => row(`${escHtml(p.key)} ${escHtml(p.title)}`, p.hours, 'fx-ro-sub')).join('');
   }
 
   // 担当者・日付に登録済みの値を入力欄に読み込む（再登録が上書きになることが分かるように）
@@ -129,17 +154,29 @@
     const date = document.getElementById('fxDate').value;
     const seq = ++loadSeq;
     inputs().forEach(el => { el.value = ''; });
+    renderReadonly(0, []);
     updateTotal();
     setMsg('');
     if (!name || !date) return;
     try {
-      const res = await fetch(`/api/fixed-worklog?name=${encodeURIComponent(name)}&date=${encodeURIComponent(date)}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      // 担当者・日付の全実績（案件ごとの集計）。固定区分は入力欄へ、保守作業と Backlog 案件は表示のみ。
+      const res = await fetch(`/api/worklog/search?name=${encodeURIComponent(name)}&date=${encodeURIComponent(date)}&t=${Date.now()}`);
+      const rows = await res.json();
+      if (!res.ok) throw new Error(rows.error || `HTTP ${res.status}`);
       if (seq !== loadSeq) return;
-      inputs().forEach(el => { el.value = data[el.dataset.key] ? String(data[el.dataset.key]) : ''; });
+      const fixed = {};
+      let maint = 0;
+      const projects = [];
+      for (const r of rows) {
+        if (INPUT_KEYS.includes(r.parentKey)) fixed[r.parentKey] = (fixed[r.parentKey] || 0) + r.hours;
+        else if (r.parentKey === 'FIX-MAINT') maint += r.hours;
+        else if (!r.parentKey.startsWith('FIX-')) projects.push({ key: r.parentKey, title: r.parentTitle || '', hours: r.hours });
+      }
+      projects.sort((a, b) => a.key.localeCompare(b.key, 'ja', { numeric: true }));
+      inputs().forEach(el => { el.value = fixed[el.dataset.key] ? fmtH(fixed[el.dataset.key]) : ''; });
+      renderReadonly(maint, projects);
       updateTotal();
-      if (Object.keys(data).length) setMsg('登録済みの工数を表示しています。変更して「登録」で上書きします。');
+      if (Object.keys(fixed).length) setMsg('登録済みの工数を表示しています。変更して「登録」で上書きします。');
     } catch (e) {
       if (seq === loadSeq) setMsg('登録済み工数の読み込みに失敗しました: ' + e.message, 'error');
     }

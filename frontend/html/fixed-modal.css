@@ -27,7 +27,12 @@
 .fx-row input:focus { border-color: var(--accent); }
 .fx-row .unit { font-size: 12px; color: var(--text3); width: 14px; }
 .fx-sep { border-top: 1px solid var(--border); margin: 2px 0; }
-.fx-total { font-family: var(--mono); font-weight: 700; width: 110px; text-align: right; }
+.fx-total { font-family: var(--mono); font-weight: 700; width: 110px; text-align: right; padding: 0 9px; box-sizing: border-box; }
+.fx-ro label { color: var(--text3); }
+.fx-ro-val { font-family: var(--mono); width: 110px; text-align: right; color: var(--text2); padding: 0 9px; box-sizing: border-box; }
+.fx-ro-note { font-size: 10px; color: var(--text3); border: 1px solid var(--border2); border-radius: 3px; padding: 0 4px; margin-left: 4px; }
+.fx-ro-sub label { padding-left: 14px; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-ro-sub .fx-ro-val { font-size: 11px; color: var(--text3); }
 .fx-msg { font-size: 12px; min-height: 18px; color: var(--text3); }
 .fx-msg.error { color: var(--red); }
 .fx-msg.ok { color: var(--green); }
