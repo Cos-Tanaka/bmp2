@@ -271,42 +271,6 @@
   <button class="chip" onclick="setCustomStatusFilter('本番',this)">本番リリース済み</button>
 </div>
 
-<div class="modal-overlay" id="worklogModal" onclick="if(event.target===this)closeWorklogModal()">
-  <div class="modal" role="dialog" aria-modal="true">
-    <div class="modal-head">
-      <div>
-        <span class="m-key" id="wKey"></span>
-        <div class="m-title" id="wTitle"></div>
-      </div>
-      <button class="modal-close" onclick="closeWorklogModal()" aria-label="閉じる">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="w-form">
-        <div class="m-field">
-          <span class="m-label">追加工数 (h) <span style="color:var(--red)">*</span></span>
-          <input type="number" step="0.25" min="0" class="m-select" id="wHours" placeholder="例: 1.5">
-        </div>
-        <div class="m-field">
-          <span class="m-label">名前 <span style="color:var(--red)">*</span></span>
-          <input type="text" class="m-select" id="wName" placeholder="入力者名">
-        </div>
-        <div class="m-field">
-          <span class="m-label">日時 <span style="color:var(--red)">*</span></span>
-          <input type="datetime-local" class="m-select" id="wDate">
-        </div>
-        <div class="w-form-foot">
-          <span class="m-msg" id="wMsg"></span>
-          <button class="m-save" id="wAdd" onclick="addWorklog('w')">追加</button>
-        </div>
-      </div>
-      <div class="w-history">
-        <div class="w-history-title">入力履歴</div>
-        <div id="wHistory"></div>
-      </div>
-    </div>
-  </div>
-</div>
-
 <div class="table-wrap">
   <table>
     <thead>
@@ -669,7 +633,7 @@ function renderTable() {
         <td>${avatarHTML(c.assignee)}</td>
         <td>${dateRange(c.start, c.due)}</td>
         <td style="text-align:right"><span class="hours-cell hours-plan">${c.plannedH}h</span></td>
-        <td style="text-align:right"><span class="hours-cell hours-actual hours-actual-edit" onclick="openWorklogModal('${c.id}')" title="実績工数を入力">${c.actualH}h</span></td>
+        <td style="text-align:right"><span class="hours-cell hours-actual hours-actual-edit" onclick="openChildModal('${c.id}', { focusWorklog: true })" title="実績工数を入力">${c.actualH}h</span></td>
         <td style="text-align:right">${diffHTML(c.plannedH, c.actualH)}</td>
         <td style="text-align:right">${remainingHTML(c.remainingH, c.plannedH, c.actualH)}</td>
         <td>${progressBar1(cpct)}</td>
@@ -709,33 +673,6 @@ function findChild(childId) {
   }
   return null;
 }
-
-// ── 実績工数 独立モーダル(prefix 'w') ─────────────
-// 入力ロジック(mountWorklogPanel/addWorklog/deleteWorklog 等)は child-modal.js を共用し、
-// 対象子課題IDだけをこのページが worklogChildId で保持して ChildModal.init() 経由で渡す。
-let worklogChildId = null;                  // 独立モーダル(w)が対象とする子課題ID
-
-async function openWorklogModal(childId) {
-  const found = findChild(childId);
-  if (!found) return;
-  const { child: c } = found;
-  worklogChildId = childId;
-
-  document.getElementById('wKey').textContent = c.id;
-  document.getElementById('wTitle').textContent = c.title;
-  document.getElementById('worklogModal').classList.add('open');
-
-  await mountWorklogPanel('w', childId);
-}
-
-function closeWorklogModal() {
-  worklogChildId = null;
-  document.getElementById('worklogModal').classList.remove('open');
-}
-
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeWorklogModal();
-});
 
 // ── フィルター ────────────────────────────────────
 function setFilter(key, val, btn) {
@@ -853,7 +790,6 @@ FixedModal.init();
 ChildModal.init({
   findChild,
   onDataChanged: () => fetchData(true),
-  getStandaloneWorklogId: () => worklogChildId,
 });
 fetchData();
 </script>

@@ -239,7 +239,7 @@
 
   <div class="toolbar-group">
     <button class="btn-refresh" onclick="openFixedModal()" style="font-size:11px;padding:3px 10px;">✏️ 固定作業の工数登録</button>
-    <span class="note">※ BPMの実績入力（日時付き）で登録された工数のみ集計</span>
+    <span class="note">※ BPMの実績入力（日付付き）で登録された工数のみ集計</span>
     <button class="btn-refresh" onclick="exportCsv()" style="font-size:11px;padding:3px 10px;">📥 CSVダウンロード</button>
     <button class="btn-refresh" onclick="importMaintenanceHours()" id="btnMaintImport" style="font-size:11px;padding:3px 10px;">🔄 保守工数を取得</button>
     <span class="note" id="maintImportMsg"></span>
@@ -615,7 +615,7 @@ function render() {
   if (!groupList.length) {
     const filtered = selectedNames.length ? '（担当者の絞り込み中）' : '';
     container.innerHTML = `<div class="state-message">${ym.year}年${ym.month}月の実績工数の入力はありません${filtered}。<br>
-      <span style="font-size:12px">一覧・ガント・月別工数の子課題詳細から「実績工数」を日時付きで入力すると、ここに日別で表示されます。</span></div>`;
+      <span style="font-size:12px">一覧・ガント・月別工数の子課題詳細から「実績工数」を日付付きで入力すると、ここに日別で表示されます。</span></div>`;
     return;
   }
 

@@ -724,6 +724,8 @@ def api_worklog_add(key: str):
     子課題の実績工数を日々入力する。
     body(JSON): { "hours": number, "name": str, "addedAt": str?, "parentKey": str, "parentTitle": str }
     - バリデーション: hours/name は必須、hours は数値のみ、addedAt は ISO 形式（省略時はサーバー現在時刻）
+    - addedAt が日付のみ（YYYY-MM-DD、画面からの通常入力）の場合は、固定作業と同様に
+      時刻を登録時刻から借りて補う（集計は date(added_at) の日単位で、時刻は画面に出さない）
     - Backlog の actualHours に加算し、SQLite に履歴を保存する
     """
     body = request.get_json(silent=True) or {}
@@ -744,9 +746,12 @@ def api_worklog_add(key: str):
     added_at = None
     if added_at_raw:
         try:
+            if len(added_at_raw) == 10:
+                day = datetime.date.fromisoformat(added_at_raw).isoformat()
+                added_at_raw = f"{day}T{now_jst_iso()[11:]}"
             dt = datetime.datetime.fromisoformat(added_at_raw)
         except ValueError:
-            abort(400, description="日時の形式が不正です")
+            abort(400, description="日付の形式が不正です")
         # tz 付きは JST に変換し、DB の naive JST 文字列形式に揃える
         if dt.tzinfo is not None:
             dt = dt.astimezone(JST).replace(tzinfo=None)
