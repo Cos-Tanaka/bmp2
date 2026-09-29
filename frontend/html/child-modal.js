@@ -1,11 +1,12 @@
 // 子課題詳細モーダル（担当者・進捗・日付・チェック状態の編集 + 実績工数入力パネル）。
 // index.html（一覧）と gantt.html（ガント）から共通で読み込む。
-// 利用側は起動時に ChildModal.init({ findChild, onDataChanged, getStandaloneWorklogId }) を呼び、
+// 利用側は起動時に ChildModal.init({ findChild, onDataChanged }) を呼び、
 // 子課題タイトルの onclick から ChildModal.open(id)（= グローバルの openChildModal(id)）で開く。
+// openChildModal(id, { focusWorklog: true }) で開くと実績工数入力欄へスクロールしてフォーカスする
+// （一覧画面の実績工数セルから開く場合）。
 //
-// 実績工数入力パネルは、このモーダル内('dw' プレフィックス)と、一覧画面が独自に持つ
-// 単独モーダル('w' プレフィックス、index.html にそのまま残す)の二箇所で共用する。
-// 'w' 側の対象子課題IDは opts.getStandaloneWorklogId() 経由で取得する（未指定なら 'w' は使わない）。
+// 実績工数入力パネルはこのモーダル内のみ（'dw' プレフィックス）。
+// 日付は日単位で扱う（登録時の時刻はサーバーが付与し、画面には表示しない）。
 (function () {
   const MODAL_HTML = `
 <div class="modal-overlay" id="childModal" onclick="if(event.target===this)closeChildModal()">
@@ -38,8 +39,8 @@
             <input type="text" class="m-select" id="dwName" placeholder="入力者名">
           </div>
           <div class="m-field">
-            <span class="m-label">日時 <span style="color:var(--red)">*</span></span>
-            <input type="datetime-local" class="m-select" id="dwDate">
+            <span class="m-label">日付 <span style="color:var(--red)">*</span></span>
+            <input type="date" class="m-select" id="dwDate">
           </div>
           <div class="w-form-foot">
             <span class="m-msg" id="dwMsg"></span>
@@ -53,14 +54,14 @@
   </div>
 </div>`;
 
-  let opts = { findChild: null, onDataChanged: null, getStandaloneWorklogId: null };
+  let opts = { findChild: null, onDataChanged: null };
   let modalChildId = null;          // 現在モーダルで開いている子課題ID
   let modalOriginal = {};           // モーダル表示時の初期選択値（変更検知用）
   let fieldOptions = null;          // 進捗率・チェック状態の選択肢
   let projectUsers = null;          // 担当者プルダウンの選択肢 [{id, name}]
 
   const WORKLOG_NAME_KEY = 'bpm2-worklog-name';
-  const worklogRowsByPrefix = { w: [], dw: [] };   // 表示中の履歴（削除時の確認メッセージ用）
+  const worklogRowsByPrefix = { dw: [] };   // 表示中の履歴（削除時の確認メッセージ用）
 
   function escHtml(s) {
     return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -74,10 +75,9 @@
     return opts.findChild ? opts.findChild(childId) : null;
   }
 
-  // prefix が対象とする子課題IDを返す（'dw' は詳細モーダル、'w' は各ページの単独モーダル）
+  // prefix が対象とする子課題IDを返す（'dw' = 詳細モーダルで開いている子課題）
   function worklogTargetId(prefix) {
-    if (prefix === 'dw') return modalChildId;
-    return opts.getStandaloneWorklogId ? opts.getStandaloneWorklogId() : null;
+    return prefix === 'dw' ? modalChildId : null;
   }
 
   // ── 編集用フィールド選択肢の取得 ──────────────────
@@ -124,7 +124,7 @@
     ).join('');
   }
 
-  function openChildModal(childId) {
+  function openChildModal(childId, openOpts) {
     const found = findChild(childId);
     if (!found) return;
     const { child: c, parent: p } = found;
@@ -201,6 +201,11 @@
 
     document.getElementById('childModal').classList.add('open');
     mountWorklogPanel('dw', childId);
+    if (openOpts && openOpts.focusWorklog) {
+      const hoursEl = document.getElementById('dwHours');
+      hoursEl.scrollIntoView({ block: 'center' });
+      hoursEl.focus({ preventScroll: true });
+    }
   }
 
   function setModalMsg(text, cls) {
@@ -271,27 +276,28 @@
   }
 
   // ── 実績工数 日々入力レイヤー ─────────────────────
-  // フォームを初期値にリセットし、入力履歴を読み込む（独立モーダル・詳細モーダル共通）
+  // フォームを初期値にリセットし、入力履歴を読み込む
   async function mountWorklogPanel(prefix, childId) {
     document.getElementById(prefix + 'Hours').value = '';
     // 名前は前回入力をブラウザから復元
     document.getElementById(prefix + 'Name').value = localStorage.getItem(WORKLOG_NAME_KEY) || '';
-    document.getElementById(prefix + 'Date').value = nowLocalDatetime();
+    document.getElementById(prefix + 'Date').value = todayLocalDate();
     setWorklogMsg(prefix, '', '');
     document.getElementById(prefix + 'History').innerHTML = '<div class="w-hist-empty">読込中...</div>';
     await loadWorklogHistory(prefix, childId);
   }
 
-  function nowLocalDatetime() {
+  function todayLocalDate() {
     const d = new Date();
     const pad = n => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   }
 
-  function fmtDateTime(iso) {
-    const d = new Date(iso);
-    if (isNaN(d)) return iso;
-    return d.toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  // added_at（時刻付きの既存データも含む）を日付だけで表示する。
+  // DB の値は naive JST 文字列なので、Date に通さず先頭の YYYY-MM-DD をそのまま使う（タイムゾーン変換の影響を受けない）
+  function fmtDate(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso ?? ''));
+    return m ? `${m[1]}/${m[2]}/${m[3]}` : String(iso ?? '');
   }
 
   async function loadWorklogHistory(prefix, childId) {
@@ -308,7 +314,7 @@
       box.innerHTML = rows.map(r =>
         `<div class="w-hist-row">
           <span class="w-hist-name">${escHtml(r.name)}</span>
-          <span class="w-hist-date">${fmtDateTime(r.added_at)}</span>
+          <span class="w-hist-date">${fmtDate(r.added_at)}</span>
           <span class="w-hist-hours">+${r.hours}h</span>
           <button class="w-hist-del" onclick="deleteWorklog('${prefix}',${r.id})" title="この履歴を削除" aria-label="削除">🗑</button>
         </div>`
@@ -325,7 +331,7 @@
     if (!r) return;
     const ok = confirm(
       `この入力履歴を削除しますか？\n\n` +
-      `${r.name}  ${fmtDateTime(r.added_at)}  +${r.hours}h\n\n` +
+      `${r.name}  ${fmtDate(r.added_at)}  +${r.hours}h\n\n` +
       `子課題の実績工数から ${r.hours}h 減算されます（0 未満になる場合は 0 になります）。`
     );
     if (!ok) return;
@@ -376,7 +382,7 @@
     const hours = Number(hoursRaw);
     if (!Number.isFinite(hours)) { setWorklogMsg(prefix, '追加工数(h) は数値で入力してください', 'err'); return; }
     if (hours <= 0) { setWorklogMsg(prefix, '追加工数(h) は 0 より大きい数値で入力してください', 'err'); return; }
-    if (!addedAt) { setWorklogMsg(prefix, '日時は必須です', 'err'); return; }
+    if (!addedAt) { setWorklogMsg(prefix, '日付は必須です', 'err'); return; }
 
     const btn = document.getElementById(prefix + 'Add');
     btn.disabled = true;
@@ -394,7 +400,7 @@
       }
       setWorklogMsg(prefix, '追加しました', 'ok');
       document.getElementById(prefix + 'Hours').value = '';
-      document.getElementById(prefix + 'Date').value = nowLocalDatetime();
+      document.getElementById(prefix + 'Date').value = todayLocalDate();
       await loadWorklogHistory(prefix, childId);   // 履歴更新
       await notifyChanged();                        // 呼び出し元ページを最新化
       if (prefix === 'dw') refreshChildModalHours();
