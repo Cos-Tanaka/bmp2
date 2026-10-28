@@ -240,6 +240,13 @@
   .toggle-btn.open { transform: rotate(90deg); }
   .toggle-spacer { width: 16px; flex: none; }
   .health-icon { font-size: 11px; flex: none; }
+  .prio-badge {
+    flex: none; font-size: 10px; font-weight: 600; line-height: 1; padding: 2px 4px;
+    border-radius: 4px; border: 1px solid currentColor; white-space: nowrap;
+  }
+  .prio-badge.high { color: var(--red); }
+  .prio-badge.mid  { color: var(--yellow); }
+  .prio-badge.low  { color: var(--text3); }
   .issue-key { font-family: var(--mono); font-size: 11px; color: var(--accent); white-space: nowrap; flex: none; text-decoration: none; }
   .issue-key:hover { text-decoration: underline; }
   .issue-title { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -667,7 +674,60 @@ function visibleRows() {
     if (hideUndated) children = children.filter(c => resolveRange(c, 'child'));
     if (filter.hideDone) children = children.filter(c => !isDoneStatus(c));
     return { parent: row, children, range, autoExpand: assigneeActive && children.length > 0 };
-  }).filter(r => !hideUndated || r.range);
+  }).filter(r => !hideUndated || r.range)
+    .sort((a, b) => compareParentsByPriority(a.parent, b.parent));
+}
+
+/**
+ * 案件別ビューの親案件の並び順。
+ * 優先度（高→中→低）→ 優先順位（小さい順、空欄は同じ優先度内の末尾）→ Kintone番号 → 登録日（古い順）→ 課題キー。
+ * 新項目を持たない旧スナップショット（バックエンド再起動直後）でも落ちないよう、欠損値は末尾扱い。
+ */
+function compareParentsByPriority(a, b) {
+  const pa = a.priorityId ?? 99, pb = b.priorityId ?? 99;   // Backlog の id は 2=高 / 3=中 / 4=低
+  if (pa !== pb) return pa - pb;
+  const ra = a.rank ?? null, rb = b.rank ?? null;
+  if ((ra == null) !== (rb == null)) return ra == null ? 1 : -1;
+  if (ra != null && ra !== rb) return ra - rb;
+  const ka = kintoneSortKey(a.kintoneNo), kb = kintoneSortKey(b.kintoneNo);
+  if (ka[0] !== kb[0]) return ka[0] - kb[0];
+  if (ka[1] !== kb[1]) return ka[1] - kb[1];
+  const ca = a.created || '￿', cb = b.created || '￿';   // ISO 8601（UTC）なので文字列比較で日時順
+  if (ca !== cb) return ca < cb ? -1 : 1;
+  return compareIssueKeys(a.id, b.id);
+}
+
+/**
+ * Kintone番号の比較キー [区分, 数値]。区分 0 = `s-` 番号 / 1 = それ以外の形式（help- など）/ 2 = 空欄。文字列のままだと桁数違いで崩れるため数値で比べる。
+ * 手入力の揺れを吸収するため、全角は NFKC で半角に寄せ、数字だけ（1479）や `s1479` も `s-` 番号として扱う（リンク生成も数字部分だけを見ている）。
+ */
+function kintoneSortKey(no) {
+  const s = no ? String(no).normalize('NFKC').trim() : '';
+  const m = s.match(/\d+/);
+  if (!m) return [2, 0];
+  return [/^(s-?)?\d/i.test(s) ? 0 : 1, Number(m[0])];
+}
+
+/** 課題キーを番号順で比較（V2A9-504 < V2A9-1159）*/
+function compareIssueKeys(a, b) {
+  const na = Number((a.match(/(\d+)$/) || [])[1]), nb = Number((b.match(/(\d+)$/) || [])[1]);
+  if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
+  return a.localeCompare(b);
+}
+
+/** 親案件行の優先度バッジ。「中」で優先順位が無い案件（大多数）は出さない */
+function priorityBadgeHtml(p) {
+  if (!p.priority) return '';
+  const rank = p.rank != null ? String(p.rank) : '';
+  if (p.priorityId === 3 && !rank) return '';
+  const cls = p.priorityId === 2 ? 'high' : p.priorityId === 4 ? 'low' : 'mid';
+  return `<span class="prio-badge ${cls}" title="${escAttr(priorityLabel(p))}">${escHtml(p.priority + rank)}</span>`;
+}
+
+/** ツールチップ等に出す優先度の文言（例: 「高（優先順位 3）」）*/
+function priorityLabel(p) {
+  if (!p.priority) return '—';
+  return p.rank != null ? `${p.priority}（優先順位 ${p.rank}）` : p.priority;
 }
 
 /**
@@ -1065,6 +1125,7 @@ function renderGantt() {
       <div class="gcell-left">
         <button class="toggle-btn${isOpen ? ' open' : ''}" onclick="toggleRow('${escAttr(parent.id)}')" aria-label="展開">▶</button>
         <span class="health-icon">${icon}</span>
+        ${priorityBadgeHtml(parent)}
         <a href="${escAttr(parent.url)}" target="_blank" rel="noopener" class="issue-key">${escHtml(parent.id)}</a>
         <span class="issue-title" title="${escAttr(parent.title)}">${escHtml(parent.title)}</span>
         <span class="count-badge">${badge}</span>
@@ -1326,6 +1387,7 @@ function showTip(ev, id) {
     [kind === 'parent' ? 'ステータス' : 'チェック状態', (kind === 'parent' ? item.customStatus : item.checkStatus) || '—'],
     ['健全性', icon],
   ];
+  if (kind === 'parent') rows.push(['優先度', priorityLabel(item)], ['Kintone番号', item.kintoneNo || '—']);
   if (parent) rows.unshift(['親案件', `${parent.id} ${parent.title}`]);
 
   const tip = document.getElementById('gtip');
