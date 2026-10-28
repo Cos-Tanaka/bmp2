@@ -697,11 +697,15 @@ function compareParentsByPriority(a, b) {
   return compareIssueKeys(a.id, b.id);
 }
 
-/** Kintone番号の比較キー [区分, 数値]。区分 0 = `s-` 番号 / 1 = それ以外の形式（help- など）/ 2 = 空欄。文字列のままだと桁数違いで崩れるため数値で比べる */
+/**
+ * Kintone番号の比較キー [区分, 数値]。区分 0 = `s-` 番号 / 1 = それ以外の形式（help- など）/ 2 = 空欄。文字列のままだと桁数違いで崩れるため数値で比べる。
+ * 手入力の揺れを吸収するため、全角は NFKC で半角に寄せ、数字だけ（1479）や `s1479` も `s-` 番号として扱う（リンク生成も数字部分だけを見ている）。
+ */
 function kintoneSortKey(no) {
-  const m = no ? String(no).match(/\d+/) : null;
+  const s = no ? String(no).normalize('NFKC').trim() : '';
+  const m = s.match(/\d+/);
   if (!m) return [2, 0];
-  return [/^s-/i.test(String(no).trim()) ? 0 : 1, Number(m[0])];
+  return [/^(s-?)?\d/i.test(s) ? 0 : 1, Number(m[0])];
 }
 
 /** 課題キーを番号順で比較（V2A9-504 < V2A9-1159）*/

@@ -7,6 +7,7 @@ import re
 import csv
 import io
 import json
+import math
 import time
 import sqlite3
 import logging
@@ -569,6 +570,9 @@ def build_response(parents: list, children_map: dict, progress_field_id: int | N
                     rank = float(rval)
                 except (TypeError, ValueError):
                     pass
+            # nan / inf は JSON として不正（NaN / Infinity）になり /api/issues ごと読めなくなるので空欄扱い
+            if rank is not None and not math.isfinite(rank):
+                rank = None
 
         result.append({
             "id":           p["issueKey"],
