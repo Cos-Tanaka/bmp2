@@ -485,7 +485,7 @@ def format_issue(issue: dict, progress_field_id: int | None, check_status_field_
 KINTONE_BASE_URL = "https://aspit.cybozu.com/k/70/show#record="
 
 
-def build_response(parents: list, children_map: dict, progress_field_id: int | None, status_field_id: int | None, check_status_field_id: int | None, kintone_field_id: int | None) -> list:
+def build_response(parents: list, children_map: dict, progress_field_id: int | None, status_field_id: int | None, check_status_field_id: int | None, kintone_field_id: int | None, rank_field_id: int | None = None) -> list:
     result = []
     for p in parents:
         kids_raw = children_map.get(p["id"], [])
@@ -549,12 +549,26 @@ def build_response(parents: list, children_map: dict, progress_field_id: int | N
 
         # Kintone番号（テキスト）から数値部分のみ抽出してリンクURLを生成
         kintone_url = None
+        kintone_no  = None
         if kintone_field_id:
             kval = extract_custom_value(p, kintone_field_id)
             if kval:
-                m = re.search(r"\d+", str(kval))
+                kintone_no = str(kval)
+                m = re.search(r"\d+", kintone_no)
                 if m:
                     kintone_url = KINTONE_BASE_URL + m.group(0)
+
+        # 優先順位（数値型カスタム属性）。ガント案件別ビューの並び替えに使う。空欄は None
+        rank = None
+        if rank_field_id:
+            rval = extract_custom_value(p, rank_field_id)
+            if isinstance(rval, (int, float)):
+                rank = rval
+            elif rval not in (None, ""):
+                try:
+                    rank = float(rval)
+                except (TypeError, ValueError):
+                    pass
 
         result.append({
             "id":           p["issueKey"],
@@ -571,6 +585,11 @@ def build_response(parents: list, children_map: dict, progress_field_id: int | N
             "customStatus": custom_status,
             "url":          f"https://{SPACE}/view/{p['issueKey']}",
             "kintoneUrl":   kintone_url,
+            "kintoneNo":    kintone_no,
+            "priority":     (p.get("priority") or {}).get("name"),
+            "priorityId":   (p.get("priority") or {}).get("id"),
+            "rank":         rank,
+            "created":      p.get("created"),
             "children":     kids,
         })
     return result
@@ -622,6 +641,9 @@ def _fetch_raw() -> tuple:
     # Kintone番号フィールド
     kintone_field_name      = os.environ.get("KINTONE_FIELD_NAME", "Kintone番号")
     kintone_field_id        = custom_fields.get(kintone_field_name)
+    # 優先順位フィールド（数値型）
+    rank_field_name         = os.environ.get("RANK_FIELD_NAME", "優先順位")
+    rank_field_id           = custom_fields.get(rank_field_name)
 
     all_issues = fetch_issues_all()
 
@@ -635,7 +657,7 @@ def _fetch_raw() -> tuple:
         pid = c["parentIssueId"]
         children_map.setdefault(pid, []).append(c)
 
-    field_ids = (progress_field_id, status_field_id, check_status_field_id, kintone_field_id)
+    field_ids = (progress_field_id, status_field_id, check_status_field_id, kintone_field_id, rank_field_id)
     return parents, children_map, field_ids
 
 
