@@ -463,8 +463,10 @@ function remainingMMHTML(remaining, plannedH, actualH) {
   return `<span class="diff-cell ${cls}">${mm}人月</span>`;
 }
 
+// 親行の予／実。実は子の進捗率（予定工数で加重平均）なので 100% は超えない。
+// 予定の経過より 10pt 以上遅れていれば黄色にする。
 function progressBars2(planPct, actualPct) {
-  const cls = actualPct > 100 ? 'bar-actual-over' : actualPct > planPct + 10 ? 'bar-actual-warn' : 'bar-actual';
+  const cls = actualPct > 100 ? 'bar-actual-over' : actualPct < planPct - 10 ? 'bar-actual-warn' : 'bar-actual';
   return `<div class="progress-wrap">
     <div class="progress-row">
       <span class="progress-label">予</span>
@@ -555,7 +557,9 @@ function renderTable() {
 
   rows.forEach(row => {
     const pp  = planProgress(row.start, row.due);
-    const ap  = row.plannedH > 0 ? Math.round(row.actualH / row.plannedH * 100) : 0;
+    // 古いスナップショットで progress が無い親は工数消化率で代用
+    const ap  = row.progress != null ? row.progress
+              : (row.plannedH > 0 ? Math.round(row.actualH / row.plannedH * 100) : 0);
     const health = row.health === 'green' ? '🟢' : row.health === 'yellow' ? '🟡' : '🔴';
 
     // 担当者フィルタ時: 親が一致しない場合は一致する子課題のみ表示し、自動展開する

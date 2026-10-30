@@ -417,6 +417,29 @@ def calc_health(issue: dict, planned: float, actual: float) -> str:
     return "green"
 
 
+def child_progress_pct(progress: int | None, planned_h: float, actual_h: float) -> int:
+    """子課題の進捗率（%）。進捗率フィールド優先、無ければ工数比。100 で打ち切り"""
+    if progress is not None:
+        return min(progress, 100)
+    if planned_h > 0:
+        return min(round(actual_h / planned_h * 100), 100)
+    return 0
+
+
+def parent_progress_pct(kids: list) -> int:
+    """
+    親の進捗率（%）= 子の進捗率を予定工数で加重平均。
+    予定工数が全員 0 の場合だけ単純平均にフォールバック（加重できないため）。
+    """
+    if not kids:
+        return 0
+    pcts = [child_progress_pct(k["progress"], k["plannedH"], k["actualH"]) for k in kids]
+    total_planned = sum(k["plannedH"] for k in kids)
+    if total_planned > 0:
+        return round(sum(p * k["plannedH"] for p, k in zip(pcts, kids)) / total_planned)
+    return round(sum(pcts) / len(pcts))
+
+
 def format_issue(issue: dict, progress_field_id: int | None, check_status_field_id: int | None) -> dict:
     """子課題 1 件をフロントエンド向けに整形"""
     progress = None
@@ -456,12 +479,7 @@ def format_issue(issue: dict, progress_field_id: int | None, check_status_field_
     planned_h = issue.get("estimatedHours") or 0
     actual_h  = issue.get("actualHours")    or 0
 
-    if progress is not None:
-        progress_pct = min(progress, 100)
-    elif planned_h > 0:
-        progress_pct = min(round(actual_h / planned_h * 100), 100)
-    else:
-        progress_pct = 0
+    progress_pct = child_progress_pct(progress, planned_h, actual_h)
     remaining_h = round((planned_h / 0.8) * (100 - progress_pct) / 100, 1)
 
     return {
@@ -521,30 +539,19 @@ def build_response(parents: list, children_map: dict, progress_field_id: int | N
         if is_parent_dev:
             # 子課題の種別が 01〜07 で始まるもののみを集計
             target_prefixes = ("01", "02", "03", "04", "05", "06", "07")
-            planned_total   = 0
-            actual_total    = 0
-            remaining_total = 0
-            for k in kids:
-                if k.get("issueType", "")[:2] in target_prefixes:
-                    planned_total   += k["plannedH"]
-                    actual_total    += k["actualH"]
-                    remaining_total += k["remainingH"]
+            target_kids = [k for k in kids if k.get("issueType", "")[:2] in target_prefixes]
         elif is_parent_design:
             # 子課題の種別が 32 で始まるもののみを集計
             target_prefixes = ("32",)
-            planned_total   = 0
-            actual_total    = 0
-            remaining_total = 0
-            for k in kids:
-                if k.get("issueType", "")[:2] in target_prefixes:
-                    planned_total   += k["plannedH"]
-                    actual_total    += k["actualH"]
-                    remaining_total += k["remainingH"]
+            target_kids = [k for k in kids if k.get("issueType", "")[:2] in target_prefixes]
         else:
             # 通常はすべての子課題を合計
-            planned_total   = sum(k["plannedH"]   for k in kids)
-            actual_total    = sum(k["actualH"]    for k in kids)
-            remaining_total = sum(k["remainingH"] for k in kids)
+            target_kids = kids
+        planned_total   = sum(k["plannedH"]   for k in target_kids)
+        actual_total    = sum(k["actualH"]    for k in target_kids)
+        remaining_total = sum(k["remainingH"] for k in target_kids)
+        # 進捗率も工数と同じ集計対象の子課題から出す
+        progress_total  = parent_progress_pct(target_kids)
 
         health = calc_health(p, planned_total, actual_total)
 
@@ -583,6 +590,7 @@ def build_response(parents: list, children_map: dict, progress_field_id: int | N
             "plannedH":     planned_total,
             "actualH":      actual_total,
             "remainingH":   round(remaining_total, 1),
+            "progress":     progress_total,
             "health":       health,
             "status":       p["status"]["name"],
             "statusId":     p["status"]["id"],

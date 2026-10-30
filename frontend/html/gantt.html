@@ -1258,8 +1258,9 @@ function barCell(item, kind, range) {
   const health = kind === 'parent' ? item.health : childHealth(item);
   const color  = health === 'green' ? 'var(--green)' : health === 'yellow' ? 'var(--yellow)' : 'var(--red)';
 
-  // 進捗率: 子は進捗率フィールド優先、無ければ工数比。親は工数消化率。
-  const pct = kind === 'child' && item.progress != null
+  // 進捗率: 子は進捗率フィールド優先、無ければ工数比。親は backend が子の進捗率を予定工数で加重平均した値
+  // （古いスナップショットで progress が無い親は工数消化率）。
+  const pct = item.progress != null
     ? item.progress
     : (item.plannedH > 0 ? Math.round(item.actualH / item.plannedH * 100) : 0);
   const plan = planProgressOf(r.start, r.due);
@@ -1369,7 +1370,7 @@ function showTip(ev, id) {
   const icon = health === 'green' ? '🟢 正常' : health === 'yellow' ? '🟡 注意' : '🔴 危険';
   const r = resolveRange(item, kind);
   const days = r ? diffDays(r.start, r.due) + 1 : null;
-  const pct = kind === 'child' && item.progress != null
+  const pct = item.progress != null
     ? item.progress
     : (item.plannedH > 0 ? Math.round(item.actualH / item.plannedH * 100) : 0);
   const plan = r ? planProgressOf(r.start, r.due) : null;
