@@ -150,6 +150,11 @@ Matrix view of monthly allocated workload (man-months or hours) per assignee, ca
   - Toggle "👤 0件担当者も表示" allows viewing users with zero allocated tasks in the current range.
 - **CSV export**:
   - Exports the current matrix with UTF-8 BOM for Excel compatibility.
+- **Work calendar (就業カレンダー)** (`loadCalendar` / `importCalendarCsv` / `baseHoursFor` / `toMM`):
+  - Source: TeamSpirit's 勤務表 (company calendar of the 「事務所内勤務者R3～」 work type), exported by hand to `data/calendar/work_calendar_<FY>.csv` (daily: `date, weekday, day_type, is_workday, fixed_hours, name`) plus a `_monthly.csv` reference summary. Only the daily file is importable.
+  - 「📅 就業カレンダー取込」 uploads it to `POST /api/calendar/import` (multipart `file` or raw body; UTF-8 BOM or cp932). Required columns `date, is_workday, fixed_hours`; `day_type`/`name` optional, other columns ignored. Rows are upserted by date into the SQLite `work_calendar` table, so dates not in the file are kept — fiscal years can be imported one file at a time. `GET /api/calendar` returns `{ days: {date: {isWorkday, fixedHours, dayType, name}}, months: [{ym, days, workDays, fixedHours}] }`.
+  - **Distribution weight**: once imported, a day's weight is its `fixed_hours` (holidays/company holidays 0, the half-day 社員総会 Saturday 4h); days not in the calendar fall back to Mon–Fri 8h. A period whose weight is 0 throughout (e.g. entirely inside 年末年始) is spread by calendar days instead.
+  - **1人月基準 = 「就業カレンダー」** (`useCalendarBase`, stored as `'calendar'` in `bpm2-workload-basehours`): each month's man-months divide by that month's calendar total (`baseHoursFor(ym)`), shown as 「所定 Nh」 under the month header. Months without calendar data and the 日付未設定 column use 160h. Because the divisor differs per month, row/column totals in man-months are sums of per-month man-months (`totalMM`), not total hours ÷ a single base.
 
 ### Daily Worklog Matrix (`frontend/html/worklog-matrix.html`)
 
