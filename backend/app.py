@@ -255,6 +255,19 @@ def init_db() -> None:
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(worklog)").fetchall()]
         if "deleted_at" not in cols:
             conn.execute("ALTER TABLE worklog ADD COLUMN deleted_at TEXT")
+        # 就業カレンダー（TeamSpirit から書き出した CSV を取り込む。1 日 1 行）
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS work_calendar (
+                date         TEXT PRIMARY KEY,
+                day_type     TEXT NOT NULL DEFAULT '',
+                is_workday   INTEGER NOT NULL,
+                fixed_hours  REAL NOT NULL,
+                name         TEXT NOT NULL DEFAULT '',
+                imported_at  TEXT NOT NULL
+            )
+            """
+        )
 
 
 def add_worklog(parent_key, parent_title, child_key, name, hours, added_at=None) -> dict:
@@ -1119,6 +1132,124 @@ def api_fixed_worklog_maintenance_import():
     except Exception as e:
         log.exception("Unexpected error")
         abort(500, description=str(e))
+
+
+# ── 就業カレンダー ─────────────────────────────────
+# TeamSpirit の勤務表から書き出した CSV（data/calendar/work_calendar_*.csv）を取り込む。
+# 必須列: date, is_workday, fixed_hours / 任意列: day_type, name（weekday 等その他の列は無視）
+CALENDAR_REQUIRED_COLS = ("date", "is_workday", "fixed_hours")
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _parse_calendar_csv(text: str) -> list:
+    reader = csv.DictReader(io.StringIO(text.lstrip("﻿")))
+    cols = [c.strip() for c in (reader.fieldnames or [])]
+    missing = [c for c in CALENDAR_REQUIRED_COLS if c not in cols]
+    if missing:
+        abort(400, description=f"CSV の列が不足しています: {', '.join(missing)}")
+    reader.fieldnames = cols
+
+    rows, seen = [], set()
+    for lineno, r in enumerate(reader, start=2):
+        date_s = (r.get("date") or "").strip()
+        if not date_s:
+            continue  # 空行
+        if not _DATE_RE.match(date_s):
+            abort(400, description=f"{lineno} 行目: date は YYYY-MM-DD 形式で指定してください ({date_s})")
+        try:
+            datetime.date.fromisoformat(date_s)
+        except ValueError:
+            abort(400, description=f"{lineno} 行目: 存在しない日付です ({date_s})")
+        if date_s in seen:
+            abort(400, description=f"{lineno} 行目: 日付が重複しています ({date_s})")
+        seen.add(date_s)
+
+        wd = (r.get("is_workday") or "").strip()
+        if wd not in ("0", "1"):
+            abort(400, description=f"{lineno} 行目: is_workday は 0 か 1 で指定してください ({wd})")
+        try:
+            hours = float((r.get("fixed_hours") or "").strip())
+        except ValueError:
+            abort(400, description=f"{lineno} 行目: fixed_hours が数値ではありません")
+        if not (0 <= hours <= 24) or math.isnan(hours):
+            abort(400, description=f"{lineno} 行目: fixed_hours は 0〜24 で指定してください ({hours})")
+        if wd == "1" and hours <= 0:
+            abort(400, description=f"{lineno} 行目: 稼働日なのに fixed_hours が 0 です")
+        if wd == "0":
+            hours = 0.0
+
+        rows.append({
+            "date": date_s,
+            "day_type": (r.get("day_type") or "").strip(),
+            "is_workday": int(wd),
+            "fixed_hours": hours,
+            "name": (r.get("name") or "").strip(),
+        })
+    if not rows:
+        abort(400, description="取り込む行がありません")
+    return rows
+
+
+def _calendar_months(conn, months=None) -> list:
+    sql = ("SELECT substr(date, 1, 7) AS ym, COUNT(*) AS days,"
+           " SUM(is_workday) AS work_days, SUM(fixed_hours) AS fixed_hours"
+           " FROM work_calendar")
+    params = []
+    if months:
+        sql += f" WHERE substr(date, 1, 7) IN ({','.join('?' * len(months))})"
+        params = list(months)
+    sql += " GROUP BY ym ORDER BY ym"
+    return [
+        {"ym": r["ym"], "days": r["days"], "workDays": r["work_days"],
+         "fixedHours": round(r["fixed_hours"], 2)}
+        for r in conn.execute(sql, params).fetchall()
+    ]
+
+
+@app.route("/api/calendar", methods=["GET"])
+def api_calendar_get():
+    """取込済みの就業カレンダー全件（日別）と月別集計を返す。"""
+    with get_db() as conn:
+        days = {
+            r["date"]: {"isWorkday": bool(r["is_workday"]), "fixedHours": r["fixed_hours"],
+                        "dayType": r["day_type"], "name": r["name"]}
+            for r in conn.execute("SELECT * FROM work_calendar ORDER BY date").fetchall()
+        }
+        months = _calendar_months(conn)
+    return jsonify({"days": days, "months": months})
+
+
+@app.route("/api/calendar/import", methods=["POST"])
+def api_calendar_import():
+    """
+    就業カレンダー CSV を取り込む。本文は multipart の file か、CSV テキストそのもの。
+    CSV に含まれる日付だけを上書きする（含まれない日付の既存データは残す）ので、
+    年度ごとに分けたファイルを順に取り込める。
+    """
+    f = request.files.get("file")
+    raw = f.read() if f else request.get_data()
+    if not raw:
+        abort(400, description="CSV が空です")
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        try:
+            text = raw.decode("cp932")  # Excel で保存し直した Shift_JIS も受け付ける
+        except UnicodeDecodeError:
+            abort(400, description="CSV の文字コードを判別できません（UTF-8 か Shift_JIS で保存してください）")
+
+    rows = _parse_calendar_csv(text)
+    now = now_jst_iso()
+    with get_db() as conn:
+        conn.executemany(
+            "INSERT OR REPLACE INTO work_calendar (date, day_type, is_workday, fixed_hours, name, imported_at)"
+            " VALUES (:date, :day_type, :is_workday, :fixed_hours, :name, :imported_at)",
+            [{**r, "imported_at": now} for r in rows],
+        )
+        touched = sorted({r["date"][:7] for r in rows})
+        months = _calendar_months(conn, touched)
+    dates = [r["date"] for r in rows]
+    return jsonify({"ok": True, "days": len(rows), "from": min(dates), "to": max(dates), "months": months})
 
 
 @app.route("/api/health")

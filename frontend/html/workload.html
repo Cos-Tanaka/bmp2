@@ -301,6 +301,7 @@
 
       <span class="filter-label">1人月基準:</span>
       <select class="select-filter" id="baseHoursSelect" onchange="setBaseHours(this.value)">
+        <option value="calendar" id="baseHoursCalendarOpt">就業カレンダー（月別所定時間）</option>
         <option value="144">144 h / 人月 (18.0日)</option>
         <option value="152">152 h / 人月 (19.0日)</option>
         <option value="160" selected>160 h / 人月 (20.0日・標準)</option>
@@ -308,6 +309,9 @@
         <option value="176">176 h / 人月 (22.0日)</option>
         <option value="184">184 h / 人月 (23.0日)</option>
       </select>
+      <button class="btn-refresh" onclick="document.getElementById('calendarFile').click()" style="font-size:11px;padding:3px 10px;" title="TeamSpirit から書き出した就業カレンダー CSV を取り込む">📅 就業カレンダー取込</button>
+      <input type="file" id="calendarFile" accept=".csv,text/csv" style="display:none" onchange="importCalendarCsv(this)">
+      <span class="filter-label" id="calendarStatus" style="margin-left:4px"></span>
     </div>
 
     <div class="toolbar-group">
@@ -379,7 +383,10 @@ let currentPhase = 'all';                  // 案件フェーズ絞り込み ('a
 let hideDone = false;                      // 完了済み子課題を除外するか
 let showZeroAssignees = false;             // 課題0件の担当者も表示するか
 let displayUnit = 'man_month';             // 'man_month' | 'hours'
-let baseHoursPerMonth = 160;               // 1人月の基準時間 (144, 152, 160, 168, 176, 184)
+let baseHoursPerMonth = 160;               // 1人月の基準時間 (144, 152, 160, 168, 176, 184)。カレンダー基準時はカレンダー未取込月の代替値
+let useCalendarBase = false;               // true: 1人月 = 就業カレンダーのその月の所定時間
+let workCalendar = { days: {}, months: {} }; // /api/calendar（days: date → {isWorkday, fixedHours, ...}, months: ym → {workDays, fixedHours}）
+const DEFAULT_DAY_HOURS = 8;               // カレンダー未取込日の平日 1 日あたり時間
 let startYearMonth = { year: 2026, month: 4 }; // 表示期間の開始年月 (1-indexed month)
 const DISPLAY_MONTHS_COUNT = 12;           // 表示する月数 (12ヶ月)
 
@@ -407,7 +414,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  await loadProjectUsers();
+  await Promise.all([loadProjectUsers(), loadCalendar()]);
   await fetchData();
   setInterval(() => fetchData(), POLL_MS);
 });
@@ -432,9 +439,14 @@ function loadSavedSettings() {
   } catch(e){}
 
   const bh = localStorage.getItem(BASE_HOURS_KEY);
-  if (bh && [144, 152, 160, 168, 176, 184].includes(Number(bh))) {
+  if (bh === 'calendar') {
+    useCalendarBase = true;
+    document.getElementById('baseHoursSelect').value = 'calendar';
+  } else if (bh && [144, 152, 160, 168, 176, 184].includes(Number(bh))) {
     baseHoursPerMonth = Number(bh);
     document.getElementById('baseHoursSelect').value = String(baseHoursPerMonth);
+  } else {
+    document.getElementById('baseHoursSelect').value = '160';
   }
 
   const u = localStorage.getItem(UNIT_KEY);
@@ -502,6 +514,65 @@ async function loadProjectUsers() {
   } catch(e){}
 }
 
+// 就業カレンダー（取込済みでなければ空のまま。その場合は土日除外・平日 8h で計算する）
+async function loadCalendar() {
+  try {
+    const res = await fetch('/api/calendar');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const months = {};
+    (data.months || []).forEach(m => { months[m.ym] = m; });
+    workCalendar = { days: data.days || {}, months };
+  } catch (e) {
+    workCalendar = { days: {}, months: {} };
+  }
+  updateCalendarStatus();
+}
+
+function updateCalendarStatus() {
+  const keys = Object.keys(workCalendar.months).sort();
+  const el = document.getElementById('calendarStatus');
+  const opt = document.getElementById('baseHoursCalendarOpt');
+  if (!keys.length) {
+    el.textContent = '（カレンダー未取込）';
+    opt.textContent = '就業カレンダー（未取込・160h で代替）';
+  } else {
+    el.textContent = `取込済: ${keys[0].replace('-', '/')} 〜 ${keys[keys.length - 1].replace('-', '/')}`;
+    opt.textContent = '就業カレンダー（月別所定時間）';
+  }
+}
+
+async function importCalendarCsv(input) {
+  const file = input.files && input.files[0];
+  input.value = '';  // 同じファイルを再選択しても change が発火するように
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch('/api/calendar/import', { method: 'POST', body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    await loadCalendar();
+    renderMatrix();
+    const lines = (data.months || []).map(m => `  ${m.ym}: ${m.workDays}日 / ${m.fixedHours}h`).join('\n');
+    alert(`就業カレンダーを取り込みました（${data.days}日分 ${data.from} 〜 ${data.to}）\n\n${lines}`);
+  } catch (e) {
+    alert('就業カレンダーの取込に失敗しました: ' + e.message);
+  }
+}
+
+// 1人月の基準時間（月キー 'YYYY-MM'。null は日付未設定列など特定の月に属さない工数）
+function baseHoursFor(monthKey) {
+  if (useCalendarBase && monthKey) {
+    const m = workCalendar.months[monthKey];
+    if (m && m.fixedHours > 0) return m.fixedHours;
+  }
+  return baseHoursPerMonth;
+}
+function toMM(hours, monthKey) {
+  return hours / baseHoursFor(monthKey);
+}
+
 async function fetchData(force = false) {
   setSyncState('loading');
   try {
@@ -536,31 +607,40 @@ function findChildInAllData(childId) {
   return null;
 }
 
-// ── 営業日数計算ロジック ──────────────────────────────
-// 土曜日(6)と日曜日(0)を除外した平日日数を返す。
-function countBusinessDays(startDateStr, endDateStr) {
+// ── 稼働量計算ロジック ──────────────────────────────
+// 按分の重み = 期間内の所定時間の合計。就業カレンダーを取り込んだ日はその所定時間
+// （祝日・会社休日は 0、半日出勤日は 4h 等）、未取込の日は平日 8h・土日 0h とみなす。
+// calendarDays=true のときは暦日数を返す（期間全体が非稼働日のときの按分用）。
+function isoOf(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function sumWorkWeight(startDateStr, endDateStr, calendarDays = false) {
   if (!startDateStr || !endDateStr) return 0;
   const s = new Date(startDateStr + 'T00:00:00');
   const e = new Date(endDateStr + 'T00:00:00');
   if (isNaN(s.getTime()) || isNaN(e.getTime()) || s > e) return 0;
 
-  let count = 0;
+  let sum = 0;
   const cur = new Date(s);
   while (cur <= e) {
-    const day = cur.getDay();
-    if (day !== 0 && day !== 6) count++;
+    if (calendarDays) {
+      sum += 1;
+    } else {
+      const cal = workCalendar.days[isoOf(cur)];
+      if (cal) sum += cal.isWorkday ? cal.fixedHours : 0;
+      else { const day = cur.getDay(); if (day !== 0 && day !== 6) sum += DEFAULT_DAY_HOURS; }
+    }
     cur.setDate(cur.getDate() + 1);
   }
-  // 全期間が土日の場合はゼロ除算を避けるため最低1日とする
-  return count > 0 ? count : 1;
+  return sum;
 }
 
-// 2つの日付文字列の重複期間における営業日数を算出
-function countOverlapBusinessDays(s1Str, e1Str, s2Str, e2Str) {
+// 2つの期間の重複部分の重みを算出
+function sumOverlapWorkWeight(s1Str, e1Str, s2Str, e2Str, calendarDays = false) {
   const startMax = s1Str > s2Str ? s1Str : s2Str;
   const endMin = e1Str < e2Str ? e1Str : e2Str;
   if (startMax > endMin) return 0;
-  return countBusinessDays(startMax, endMin);
+  return sumWorkWeight(startMax, endMin, calendarDays);
 }
 
 // ── 表示期間（月リスト）の生成 ────────────────────────
@@ -625,7 +705,7 @@ function distributeChildHours(child, parent, monthsList) {
     const ym = due.slice(0, 7);
     if (res.byMonth[ym]) {
       res.byMonth[ym].hours += planned;
-      res.byMonth[ym].manMonth = res.byMonth[ym].hours / baseHoursPerMonth;
+      res.byMonth[ym].manMonth = toMM(res.byMonth[ym].hours, ym);
     } else {
       // 表示期間外の月
       res.undatedHours += planned;
@@ -638,28 +718,31 @@ function distributeChildHours(child, parent, monthsList) {
     const ym = start.slice(0, 7);
     if (res.byMonth[ym]) {
       res.byMonth[ym].hours += planned;
-      res.byMonth[ym].manMonth = res.byMonth[ym].hours / baseHoursPerMonth;
+      res.byMonth[ym].manMonth = toMM(res.byMonth[ym].hours, ym);
     } else {
       res.undatedHours += planned;
     }
     return res;
   }
 
-  // 4. 開始日・期限日の両方あり（営業日数按分）
-  const totalB = countBusinessDays(start, due);
-  if (totalB <= 0) {
+  // 4. 開始日・期限日の両方あり（所定時間で按分。期間がすべて非稼働日なら暦日で按分）
+  let byCalendarDays = false;
+  let totalW = sumWorkWeight(start, due);
+  if (totalW <= 0) {
+    byCalendarDays = true;
+    totalW = sumWorkWeight(start, due, true);
+  }
+  if (totalW <= 0) {
     res.undatedHours = planned;
     return res;
   }
 
-  let allocatedSum = 0;
   monthsList.forEach(m => {
-    const overlapB = countOverlapBusinessDays(start, due, m.startStr, m.endStr);
-    if (overlapB > 0) {
-      const h = planned * (overlapB / totalB);
+    const overlapW = sumOverlapWorkWeight(start, due, m.startStr, m.endStr, byCalendarDays);
+    if (overlapW > 0) {
+      const h = planned * (overlapW / totalW);
       res.byMonth[m.key].hours += h;
-      res.byMonth[m.key].manMonth = res.byMonth[m.key].hours / baseHoursPerMonth;
-      allocatedSum += h;
+      res.byMonth[m.key].manMonth = toMM(res.byMonth[m.key].hours, m.key);
     }
   });
 
@@ -789,7 +872,7 @@ function renderMatrix() {
             child,
             parent,
             allocatedH: h,
-            allocatedMM: h / baseHoursPerMonth
+            allocatedMM: toMM(h, m.key)
           });
         }
       });
@@ -801,18 +884,21 @@ function renderMatrix() {
           child,
           parent,
           allocatedH: dist.undatedHours,
-          allocatedMM: dist.undatedHours / baseHoursPerMonth
+          allocatedMM: toMM(dist.undatedHours, null)
         });
       }
     });
   });
 
   // 各行の合計工数を算出
+  // 人月は月ごとに基準時間が違いうる（就業カレンダー基準）ため、時間を合計してから割らず月ごとの人月を足す
   userRows.forEach(row => {
-    let sum = 0;
-    months.forEach(m => { sum += row.byMonth[m.key]; });
+    let sum = 0, mm = 0;
+    months.forEach(m => { sum += row.byMonth[m.key]; mm += toMM(row.byMonth[m.key], m.key); });
     sum += row.undatedHours;
+    mm += toMM(row.undatedHours, null);
     row.totalHours = sum;
+    row.totalMM = mm;
   });
 
   // フィルタリング（担当者選択・0件担当者表示）
@@ -839,7 +925,8 @@ function renderMatrix() {
   const colTotals = {
     byMonth: {},
     undatedHours: 0,
-    totalHours: 0
+    totalHours: 0,
+    totalMM: 0
   };
   months.forEach(m => { colTotals.byMonth[m.key] = 0; });
 
@@ -847,6 +934,7 @@ function renderMatrix() {
     months.forEach(m => { colTotals.byMonth[m.key] += r.byMonth[m.key]; });
     colTotals.undatedHours += r.undatedHours;
     colTotals.totalHours += r.totalHours;
+    colTotals.totalMM += r.totalMM;
   });
 
   currentMatrixData = { months, rows: displayRows, colTotals };
@@ -859,7 +947,10 @@ function renderMatrix() {
 
   months.forEach(m => {
     const cls = m.isCurrent ? 'current-month' : '';
-    html += `<th class="${cls}">${m.label}${m.isCurrent ? ' (今月)' : ''}</th>`;
+    const baseNote = useCalendarBase
+      ? `<div style="font-size:10px;font-weight:400;color:var(--text3)">所定 ${baseHoursFor(m.key)}h${workCalendar.months[m.key] ? '' : '（未取込）'}</div>`
+      : '';
+    html += `<th class="${cls}">${m.label}${m.isCurrent ? ' (今月)' : ''}${baseNote}</th>`;
   });
 
   html += `<th>日付未設定</th>
@@ -883,8 +974,8 @@ function renderMatrix() {
       // 各月セル
       months.forEach(m => {
         const h = row.byMonth[m.key];
-        const valStr = formatCellVal(h);
-        const mm = h / baseHoursPerMonth;
+        const mm = toMM(h, m.key);
+        const valStr = formatCellVal(h, mm);
         const hmCls = getHeatmapClass(mm, h);
         const currentCls = m.isCurrent ? 'current-month-cell' : '';
 
@@ -896,7 +987,7 @@ function renderMatrix() {
       });
 
       // 日付未設定
-      const undatedVal = formatCellVal(row.undatedHours);
+      const undatedVal = formatCellVal(row.undatedHours, toMM(row.undatedHours, null));
       html += `<td>
         <span class="cell-val ${row.undatedHours > 0 ? 'hm-light' : 'hm-zero'}" onclick="openBreakdown('${row.id}', 'undated', '日付未設定')" title="クリックで内訳を表示">
           ${undatedVal}
@@ -904,7 +995,7 @@ function renderMatrix() {
       </td>`;
 
       // 行合計
-      const totalVal = formatCellVal(row.totalHours);
+      const totalVal = formatCellVal(row.totalHours, row.totalMM);
       html += `<td class="total-col">
         <span class="cell-val" style="font-weight:700">${totalVal}</span>
       </td></tr>`;
@@ -918,12 +1009,12 @@ function renderMatrix() {
 
   months.forEach(m => {
     const sumH = colTotals.byMonth[m.key];
-    const valStr = formatCellVal(sumH);
+    const valStr = formatCellVal(sumH, toMM(sumH, m.key));
     html += `<td><span class="cell-val" style="font-weight:700">${valStr}</span></td>`;
   });
 
-  html += `<td><span class="cell-val" style="font-weight:700">${formatCellVal(colTotals.undatedHours)}</span></td>
-      <td class="total-col"><span class="cell-val" style="font-weight:700;font-size:13px">${formatCellVal(colTotals.totalHours)}</span></td>
+  html += `<td><span class="cell-val" style="font-weight:700">${formatCellVal(colTotals.undatedHours, toMM(colTotals.undatedHours, null))}</span></td>
+      <td class="total-col"><span class="cell-val" style="font-weight:700;font-size:13px">${formatCellVal(colTotals.totalHours, colTotals.totalMM)}</span></td>
     </tr>
   </tfoot>
   </table>`;
@@ -932,10 +1023,9 @@ function renderMatrix() {
 }
 
 // ── 数値フォーマット & ヒートマップ判定 ────────────────
-function formatCellVal(hours) {
+function formatCellVal(hours, mm) {
   if (hours <= 0.001) return '-';
   if (displayUnit === 'man_month') {
-    const mm = hours / baseHoursPerMonth;
     return mm.toFixed(2);
   } else {
     return hours.toFixed(1) + 'h';
@@ -959,8 +1049,9 @@ function setDisplayUnit(unit, btn) {
 }
 
 function setBaseHours(val) {
-  baseHoursPerMonth = Number(val);
-  try { localStorage.setItem(BASE_HOURS_KEY, String(baseHoursPerMonth)); } catch(e){}
+  useCalendarBase = val === 'calendar';
+  if (!useCalendarBase) baseHoursPerMonth = Number(val);
+  try { localStorage.setItem(BASE_HOURS_KEY, useCalendarBase ? 'calendar' : String(baseHoursPerMonth)); } catch(e){}
   renderMatrix();
 }
 
@@ -1052,7 +1143,7 @@ function openBreakdown(assigneeId, monthKey, monthLabel) {
 
   let totalAllocH = 0;
   items.forEach(it => totalAllocH += it.allocatedH);
-  const totalAllocMM = totalAllocH / baseHoursPerMonth;
+  const totalAllocMM = toMM(totalAllocH, monthKey === 'undated' ? null : monthKey);
 
   let html = '';
   if (items.length === 0) {
@@ -1132,10 +1223,10 @@ function exportCsv() {
       r.name,
       ...months.map(m => {
         const h = r.byMonth[m.key];
-        return displayUnit === 'man_month' ? (h / baseHoursPerMonth).toFixed(2) : h.toFixed(1);
+        return displayUnit === 'man_month' ? toMM(h, m.key).toFixed(2) : h.toFixed(1);
       }),
-      displayUnit === 'man_month' ? (r.undatedHours / baseHoursPerMonth).toFixed(2) : r.undatedHours.toFixed(1),
-      displayUnit === 'man_month' ? (r.totalHours / baseHoursPerMonth).toFixed(2) : r.totalHours.toFixed(1),
+      displayUnit === 'man_month' ? toMM(r.undatedHours, null).toFixed(2) : r.undatedHours.toFixed(1),
+      displayUnit === 'man_month' ? r.totalMM.toFixed(2) : r.totalHours.toFixed(1),
     ];
     csvRows.push(rowData);
   });
@@ -1145,10 +1236,10 @@ function exportCsv() {
     '月別合計',
     ...months.map(m => {
       const h = colTotals.byMonth[m.key];
-      return displayUnit === 'man_month' ? (h / baseHoursPerMonth).toFixed(2) : h.toFixed(1);
+      return displayUnit === 'man_month' ? toMM(h, m.key).toFixed(2) : h.toFixed(1);
     }),
-    displayUnit === 'man_month' ? (colTotals.undatedHours / baseHoursPerMonth).toFixed(2) : colTotals.undatedHours.toFixed(1),
-    displayUnit === 'man_month' ? (colTotals.totalHours / baseHoursPerMonth).toFixed(2) : colTotals.totalHours.toFixed(1),
+    displayUnit === 'man_month' ? toMM(colTotals.undatedHours, null).toFixed(2) : colTotals.undatedHours.toFixed(1),
+    displayUnit === 'man_month' ? colTotals.totalMM.toFixed(2) : colTotals.totalHours.toFixed(1),
   ];
   csvRows.push(totalRow);
 
