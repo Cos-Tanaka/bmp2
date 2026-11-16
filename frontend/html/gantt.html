@@ -207,6 +207,39 @@
   .grow.is-child .gbar.rolled { height: 8px; }
   .gbar.rolled .gbar-pct { font-size: 8px; }
 
+  /* 子課題バーのドラッグ（移動・左右端で開始日／期限日を変更） */
+  .gbar.draggable { cursor: grab; touch-action: none; }
+  .gbar-handle { position: absolute; top: 0; bottom: 0; width: 6px; z-index: 1; cursor: ew-resize; }
+  .gbar-handle.l { left: 0; }
+  .gbar-handle.r { right: 0; }
+  .gbar.draggable:hover .gbar-handle { background: rgba(127,127,127,.45); }
+  .gbar.dragging { z-index: 3; filter: brightness(1.25); box-shadow: 0 0 0 2px var(--accent); }
+  .gbar.saving { opacity: .5; cursor: progress; }
+  .gbar.ghost { --barc: var(--accent); }
+  /* 日付未設定の子課題行: トラック上をドラッグして期間を新規に引ける */
+  .gtrack.empty-child { cursor: crosshair; touch-action: none; }
+  body.gdrag-move, body.gdrag-move * { cursor: grabbing !important; user-select: none; }
+  body.gdrag-resize, body.gdrag-resize * { cursor: ew-resize !important; user-select: none; }
+  body.gdrag-create, body.gdrag-create * { cursor: crosshair !important; user-select: none; }
+  .gdrag-label {
+    position: fixed; z-index: 510; display: none; pointer-events: none; white-space: nowrap;
+    background: var(--accent); color: #fff; font-family: var(--mono); font-size: 11px;
+    border-radius: 4px; padding: 3px 8px; box-shadow: 0 4px 12px rgba(0,0,0,.35);
+  }
+  .gdrag-label.open { display: block; }
+  .gtoast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 520;
+    display: none; align-items: center; gap: 12px; max-width: calc(100vw - 32px);
+    background: var(--bg2); border: 1px solid var(--border2); border-radius: 8px;
+    padding: 8px 14px; font-size: 12px; color: var(--text); box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  }
+  .gtoast.open { display: flex; }
+  .gtoast.err { border-color: var(--red); color: var(--red); }
+  .gtoast button {
+    background: none; border: 1px solid var(--accent); color: var(--accent); border-radius: 4px;
+    padding: 2px 10px; font-size: 12px; cursor: pointer; white-space: nowrap;
+  }
+
   /* 集約帯（担当者行・親案件行）: 配下の子課題の期間を 1 レーンにまとめたもの。
      同時に走っている件数を「高さ」と「濃さ」の 2 要素で表す（並列が常態のため濃淡だけでは差が読めない）。
      下端を揃えて描くので、同時件数の増減が山の形として読める。 */
@@ -409,6 +442,8 @@
 </div>
 
 <div class="gtip" id="gtip"></div>
+<div class="gdrag-label" id="gdragLabel"></div>
+<div class="gtoast" id="gtoast"><span id="gtoastMsg"></span><button id="gtoastUndo" type="button">元に戻す</button></div>
 
 <script src="child-modal.js"></script>
 <script src="fixed-modal.js"></script>
@@ -431,6 +466,15 @@ let viewMode = 'project';                  // 'project'（案件別） | 'assign
 let selectedAssignees = [];                // 担当者別ビューの複数選択フィルタ。空 = 全員。要素は assigneeId(数値) または 'unassigned'
 let projectUsersCache = [];                // 複数選択フィルタの候補 [{id, name}]（/api/project-users）
 let bandCache = new Map();                 // 集約帯のツールチップ用: 行キー → { label, segs }
+
+// 子課題バーのドラッグによる日付変更
+let drag = null;                           // ドラッグ中の状態（startChildDrag 参照）。null = ドラッグしていない
+let pendingRender = false;                 // ドラッグ中に保留した renderGantt() 呼び出しがあるか
+let swallowClick = false;                  // ドラッグ直後のクリック（Backlog を開く）を 1 回だけ無視する
+const pendingDates = new Map();            // 保存中の子課題 ID → { start, due }（再取得で巻き戻らないよう上書きする）
+const DRAG_THRESHOLD_PX = 4;               // これ未満の移動はクリック扱い
+const DRAG_HANDLE_MIN_W = 14;              // これより細いバーは端をつかめないので移動のみ
+const AUTO_SCROLL_EDGE  = 40;              // タイムライン左右端からこの距離に入ったら自動スクロール
 
 const POLL_MS    = 60000;          // 60秒ポーリング（index.html と同じ）
 const FILTER_KEY = 'bpm2-filter';  // index.html とフィルタ状態を共有
@@ -544,6 +588,7 @@ async function fetchData(force = false) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     allData = await res.json();
+    applyPendingDates();
     document.getElementById('projectBadge').textContent =
       allData.length ? allData[0].id.split('-')[0] + ' プロジェクト' : '';
     updateAssigneeFilter();
@@ -930,7 +975,22 @@ function buildAxis(rows) {
     return colW / daysInMonth(d);
   };
 
-  return { cols, groups, colW, width: cols.length * colW, xOf, dayW, todayX: xOf(t) };
+  /**
+   * X 座標(px) → その位置を含む日付（xOf の逆変換。日単位で切り捨て）。
+   * 浮動小数の誤差で xOf(d) ちょうどの位置が前日に落ちないよう、わずかに足してから切り捨てる。
+   */
+  const EPS = 1e-6;
+  const dateAt = (x) => {
+    if (scale === 'day')  return addDays(axisStart, Math.floor(x / colW + EPS));
+    if (scale === 'week') return addDays(axisStart, Math.floor(x / colW * 7 + EPS));
+    const mi = Math.floor(x / colW + EPS);
+    const m  = addMonths(axisStart, mi);
+    const dim = daysInMonth(m);
+    const day = Math.min(Math.max(Math.floor((x / colW - mi) * dim + EPS), 0), dim - 1);
+    return addDays(m, day);
+  };
+
+  return { cols, groups, colW, width: cols.length * colW, xOf, dayW, dateAt, todayX: xOf(t) };
 }
 
 // ── 健全性（子課題はフロント側で判定）────────────
@@ -1083,6 +1143,8 @@ function axisHeadHtml() {
 }
 
 function renderGantt() {
+  // ドラッグ中に行を作り直すとつかんでいるバーが消えるため、ドラッグ終了まで保留する
+  if (drag) { pendingRender = true; return; }
   if (viewMode === 'assignee') { renderAssigneeGantt(); return; }
   const rows = visibleRows();
   const scroll = document.getElementById('ganttScroll');
@@ -1146,7 +1208,7 @@ function renderGantt() {
           ${cBar ? '' : '<span class="no-date">日付未設定</span>'}
           <span class="assignee-tag" title="${escAttr(c.assignee || '未割当')}">${escHtml(c.assignee || '未割当')}</span>
         </div>
-        <div class="gtrack" style="width:${axis.width}px">${cBar}</div>
+        ${childTrackHtml(c, cBar)}
       </div>`;
     }
   }
@@ -1234,7 +1296,7 @@ function renderAssigneeGantt() {
             <span class="issue-title" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px" onclick="openChildModal('${escAttr(c.id)}')" title="詳細を表示">${escHtml(c.title)}</span>
             ${cBar ? '' : '<span class="no-date">日付未設定</span>'}
           </div>
-          <div class="gtrack" style="width:${axis.width}px">${cBar}</div>
+          ${childTrackHtml(c, cBar)}
         </div>`;
       }
     }
@@ -1269,13 +1331,27 @@ function barCell(item, kind, range) {
     ? `<div class="gbar-plan" style="left:${Math.min(Math.max(plan, 0), 100)}%"></div>` : '';
   const pctLabel = w >= 46 ? `<div class="gbar-pct">${pct}%</div>` : '';
 
-  return `<div class="gbar${invalid ? ' invalid' : ''}${r.rolled ? ' rolled' : ''}"
+  // 子課題だけドラッグで日付を変えられる。端をつかめない細いバーは移動のみ（ハンドルを出さない）。
+  const draggable = kind === 'child' && !r.rolled;
+  const handles = draggable && w >= DRAG_HANDLE_MIN_W
+    ? '<div class="gbar-handle l"></div><div class="gbar-handle r"></div>' : '';
+  const cls = 'gbar' + (invalid ? ' invalid' : '') + (r.rolled ? ' rolled' : '')
+    + (draggable ? ' draggable' : '') + (pendingDates.has(item.id) ? ' saving' : '');
+
+  return `<div class="${cls}"${draggable ? ` data-id="${escAttr(item.id)}"` : ''}
       style="left:${x1}px;width:${w}px;--barc:${color}"
       onclick="openIssue('${escAttr(item.id)}')"
       onmouseenter="showTip(event,'${escAttr(item.id)}')" onmousemove="moveTip(event)" onmouseleave="hideTip()">
     <div class="gbar-fill" style="width:${Math.min(pct, 100)}%"></div>
-    ${planMark}${pctLabel}
+    ${planMark}${pctLabel}${handles}
   </div>`;
+}
+
+/** 子課題行のトラック。期間が引けない（日付なし・片方だけ）子課題はドラッグで期間を新規に引けるようにする。 */
+function childTrackHtml(c, cBar) {
+  if (cBar) return `<div class="gtrack" style="width:${axis.width}px">${cBar}</div>`;
+  return `<div class="gtrack empty-child" data-id="${escAttr(c.id)}" style="width:${axis.width}px"
+    title="ドラッグして開始日〜期限日を設定"></div>`;
 }
 
 // ── 展開・スクロール ──────────────────────────────
@@ -1295,6 +1371,7 @@ function toggleGroup(key) {
 
 /** バークリックで該当課題を Backlog で開く */
 function openIssue(id) {
+  if (swallowClick) { swallowClick = false; return; }   // ドラッグを離した直後のクリックは無視
   const found = findItem(id);
   if (found) window.open(found.item.url, '_blank', 'noopener');
 }
@@ -1352,6 +1429,237 @@ function scrollToToday() {
   el.scrollLeft = Math.max(0, effectiveLeftW() + axis.todayX - el.clientWidth / 2);
 }
 
+// ── 子課題バーのドラッグで開始日・期限日を変更 ──────────
+// 操作: バー中央 = 期間ごと移動 / 左端 = 開始日 / 右端 = 期限日 / 日付なし子課題の空トラック = 期間を新規に引く。
+// 1 日単位で丸め、離した時点で PATCH /api/issue/<key> に保存する（変わった項目だけ送る）。Esc で取り消し。
+// ポインタは #ganttRows に 1 か所だけ委譲で登録し、行の再描画でハンドラを付け直さない。
+const WEEKDAY_JA = '日月火水木金土';
+function fmtMDW(d) { return `${d.getMonth() + 1}/${d.getDate()}(${WEEKDAY_JA[d.getDay()]})`; }
+function fmtRangeYMD(v) { return `${v.start.replace(/-/g, '/')} 〜 ${v.due.replace(/-/g, '/')}`; }
+
+/** 保存中の日付を allData に上書きする（保存完了前のポーリングで画面が元の日付に戻らないように）。 */
+function applyPendingDates() {
+  for (const [id, v] of pendingDates) {
+    const f = findItem(id);
+    if (f && f.kind === 'child') { f.item.start = v.start; f.item.due = v.due; }
+  }
+}
+
+function onGanttPointerDown(ev) {
+  if (ev.button !== 0 || drag || !axis) return;
+  const bar   = ev.target.closest('.gbar.draggable');
+  const empty = bar ? null : ev.target.closest('.gtrack.empty-child');
+  const el = bar || empty;
+  if (!el) return;
+  const id = el.dataset.id;
+  if (pendingDates.has(id)) return;                 // 保存中のバーは触らせない
+  const found = findItem(id);
+  if (!found || found.kind !== 'child') return;
+  const r = bar ? resolveRange(found.item, 'child') : null;
+  if (bar && !r) return;
+
+  const track = bar ? bar.parentElement : empty;
+  const mode = !bar ? 'create'
+    : ev.target.closest('.gbar-handle.l') ? 'start'
+    : ev.target.closest('.gbar-handle.r') ? 'due' : 'move';
+
+  ev.preventDefault();   // テキスト選択を防ぐ（click は止めない）
+  drag = {
+    id, mode, el, bar, track, pointerId: ev.pointerId,
+    downClientX: ev.clientX, lastClientX: ev.clientX, lastClientY: ev.clientY,
+    d0: axis.dateAt(ev.clientX - track.getBoundingClientRect().left),   // つかんだ位置の日付
+    orig: { start: found.item.start || '', due: found.item.due || '' },
+    origStart: r && r.start, origDue: r && r.due,
+    start: r && r.start, due: r && r.due,
+    moved: false, raf: 0, scrollV: 0,
+  };
+  // つかんだ要素自身でキャプチャする（クリック時に要素の onclick＝Backlog を開く がそのまま動くように）
+  try { el.setPointerCapture(ev.pointerId); } catch (e) {}
+}
+
+function onGanttPointerMove(ev) {
+  if (!drag || ev.pointerId !== drag.pointerId) return;
+  drag.lastClientX = ev.clientX;
+  drag.lastClientY = ev.clientY;
+  if (!drag.moved) {
+    if (Math.abs(ev.clientX - drag.downClientX) < DRAG_THRESHOLD_PX) return;
+    beginDragVisual();
+  }
+  updateDrag();
+  updateAutoScroll();
+}
+
+function beginDragVisual() {
+  drag.moved = true;
+  hideTip();
+  document.body.classList.add(
+    drag.mode === 'move' ? 'gdrag-move' : drag.mode === 'create' ? 'gdrag-create' : 'gdrag-resize');
+  if (drag.mode === 'create') {
+    const g = document.createElement('div');
+    g.className = 'gbar ghost';
+    drag.track.appendChild(g);
+    drag.bar = g;
+  }
+  drag.bar.classList.add('dragging');
+  drag.bar.classList.remove('invalid');
+}
+
+/** 現在のポインタ位置から新しい期間を求め、つかんでいるバーだけを動かす（行は再描画しない）。 */
+function updateDrag() {
+  const cur = axis.dateAt(drag.lastClientX - drag.track.getBoundingClientRect().left);
+  if (drag.mode === 'create') {
+    drag.start = cur < drag.d0 ? cur : drag.d0;
+    drag.due   = cur < drag.d0 ? drag.d0 : cur;
+  } else {
+    const delta = diffDays(drag.d0, cur);
+    if (drag.mode === 'move') {
+      drag.start = addDays(drag.origStart, delta);
+      drag.due   = addDays(drag.origDue, delta);
+    } else if (drag.mode === 'start') {
+      const s = addDays(drag.origStart, delta);
+      drag.start = s > drag.origDue ? drag.origDue : s;   // 最短 1 日（開始日 = 期限日）で止める
+      drag.due   = drag.origDue;
+    } else {
+      const d = addDays(drag.origDue, delta);
+      drag.start = drag.origStart;
+      drag.due   = d < drag.origStart ? drag.origStart : d;
+    }
+  }
+  const left = axis.xOf(drag.start);
+  const w = Math.max(axis.xOf(drag.due) + axis.dayW(drag.due) - left, 6);
+  drag.bar.style.left  = left + 'px';
+  drag.bar.style.width = w + 'px';
+
+  const label = document.getElementById('gdragLabel');
+  label.textContent = `${fmtMDW(drag.start)} 〜 ${fmtMDW(drag.due)}　${diffDays(drag.start, drag.due) + 1} 日`;
+  label.classList.add('open');
+  const lw = label.offsetWidth;
+  label.style.left = Math.min(Math.max(8, drag.lastClientX - lw / 2), window.innerWidth - lw - 8) + 'px';
+  label.style.top  = Math.max(8, drag.lastClientY - 34) + 'px';
+}
+
+/** タイムラインの左右端近くにいる間は横スクロールを進める（表示範囲外の日付まで動かせるように）。 */
+function updateAutoScroll() {
+  const sc = document.getElementById('ganttScroll');
+  const rect = sc.getBoundingClientRect();
+  const leftEdge = rect.left + effectiveLeftW();
+  const x = drag.lastClientX;
+  let v = 0;
+  if (x > rect.right - AUTO_SCROLL_EDGE)     v =  Math.min(x - (rect.right - AUTO_SCROLL_EDGE), AUTO_SCROLL_EDGE);
+  else if (x < leftEdge + AUTO_SCROLL_EDGE)  v = -Math.min(leftEdge + AUTO_SCROLL_EDGE - x, AUTO_SCROLL_EDGE);
+  drag.scrollV = v / 2;                     // 1 フレームあたり最大 20px
+  if (drag.scrollV && !drag.raf) drag.raf = requestAnimationFrame(autoScrollTick);
+}
+
+function autoScrollTick() {
+  if (!drag) return;
+  drag.raf = 0;
+  if (!drag.scrollV) return;
+  const sc = document.getElementById('ganttScroll');
+  const before = sc.scrollLeft;
+  sc.scrollLeft += drag.scrollV;
+  if (sc.scrollLeft === before) return;     // 端に着いた
+  updateDrag();
+  drag.raf = requestAnimationFrame(autoScrollTick);
+}
+
+/** ドラッグ状態を片付ける。保留していた再描画は呼び出し側で行う。 */
+function endDrag() {
+  if (!drag) return null;
+  const d = drag;
+  if (d.raf) cancelAnimationFrame(d.raf);
+  try { d.el.releasePointerCapture(d.pointerId); } catch (e) {}
+  document.body.classList.remove('gdrag-move', 'gdrag-resize', 'gdrag-create');
+  document.getElementById('gdragLabel').classList.remove('open');
+  drag = null;
+  if (d.moved) {
+    // 離した直後に発火するクリック（Backlog を開く）を無視する。発火しなかった場合に備えて時間で解除
+    swallowClick = true;
+    setTimeout(() => { swallowClick = false; }, 300);
+  }
+  return d;
+}
+
+function flushRender(force = false) {
+  if (force || pendingRender) { pendingRender = false; renderGantt(); }
+}
+
+function onGanttPointerUp(ev) {
+  if (!drag || ev.pointerId !== drag.pointerId) return;
+  const d = endDrag();
+  if (!d.moved) { flushRender(); return; }   // クリック扱い（Backlog を開く処理は onclick 側）
+
+  const next = { start: fmtYMD(d.start), due: fmtYMD(d.due) };
+  if (next.start === d.orig.start && next.due === d.orig.due) { flushRender(true); return; }
+  pendingRender = false;
+  saveChildDates(d.id, next, d.orig);
+}
+
+/** Esc・pointercancel: 元の位置に戻して保存しない */
+function cancelDrag() {
+  const d = endDrag();
+  if (d) flushRender(d.moved);
+}
+
+/**
+ * 子課題の開始日・期限日を保存する。送るのは変わった項目だけ。
+ * 楽観的に先に描画し、失敗したら元の日付に戻す。成功時は「元に戻す」付きの通知を出す。
+ */
+async function saveChildDates(id, next, prev, isUndo = false) {
+  if (pendingDates.has(id)) return;
+  const f = findItem(id);
+  if (!f || f.kind !== 'child') return;
+  const payload = {};
+  if (next.start !== (f.item.start || '')) payload.startDate = next.start;
+  if (next.due   !== (f.item.due   || '')) payload.dueDate   = next.due;
+  if (!Object.keys(payload).length) { renderGantt(); return; }
+
+  pendingDates.set(id, next);
+  applyPendingDates();
+  renderGantt();
+  hideToast();
+  try {
+    const res = await fetch('/api/issue/' + encodeURIComponent(id), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try { const j = await res.json(); if (j.error) detail = j.error; } catch (e) {}
+      throw new Error(detail);
+    }
+    pendingDates.delete(id);
+    await fetchData(true);   // バックエンドはスナップショットを局所更新済みなので、新しい値がすぐ返る
+    if (isUndo) showToast(`${id} の日付を元に戻しました`);
+    else showToast(`${id} を ${fmtRangeYMD(next)} に変更しました`, () => saveChildDates(id, prev, next, true));
+  } catch (e) {
+    pendingDates.delete(id);
+    const g = findItem(id);
+    if (g) { g.item.start = prev.start; g.item.due = prev.due; }
+    renderGantt();
+    showToast(`${id} の日付を保存できませんでした: ${e.message}`, null, true);
+  }
+}
+
+// ── 通知（保存結果・元に戻す）──────────────────────
+let toastTimer = 0;
+function showToast(msg, onUndo = null, isErr = false) {
+  const t = document.getElementById('gtoast');
+  document.getElementById('gtoastMsg').textContent = msg;
+  const btn = document.getElementById('gtoastUndo');
+  btn.style.display = onUndo ? '' : 'none';
+  btn.onclick = onUndo ? () => { hideToast(); onUndo(); } : null;
+  t.classList.toggle('err', isErr);
+  t.classList.add('open');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, onUndo ? 8000 : 5000);
+}
+function hideToast() {
+  clearTimeout(toastTimer);
+  document.getElementById('gtoast').classList.remove('open');
+}
+
 // ── ツールチップ ──────────────────────────────────
 function findItem(id) {
   for (const row of allData) {
@@ -1363,6 +1671,7 @@ function findItem(id) {
 }
 
 function showTip(ev, id) {
+  if (drag) return;   // ドラッグ中は日付ラベルを出すのでツールチップは出さない
   const found = findItem(id);
   if (!found) return;
   const { item, kind, parent } = found;
@@ -1650,6 +1959,16 @@ ChildModal.init({
   },
   onDataChanged: () => fetchData(true),
 });
+(() => {
+  const rows = document.getElementById('ganttRows');
+  rows.addEventListener('pointerdown', onGanttPointerDown);
+  rows.addEventListener('pointermove', onGanttPointerMove);
+  rows.addEventListener('pointerup', onGanttPointerUp);
+  rows.addEventListener('pointercancel', cancelDrag);
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && drag) { ev.preventDefault(); cancelDrag(); }
+  });
+})();
 fetchData();
 setInterval(() => fetchData(), POLL_MS);
 </script>
