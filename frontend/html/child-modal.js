@@ -1,4 +1,4 @@
-// 子課題詳細モーダル（担当者・進捗・日付・チェック状態の編集 + 実績工数入力パネル）。
+// 子課題詳細モーダル（担当者・状態・進捗・日付・チェック状態の編集 + 実績工数入力パネル）。
 // index.html（一覧）と gantt.html（ガント）から共通で読み込む。
 // 利用側は起動時に ChildModal.init({ findChild, onDataChanged }) を呼び、
 // 子課題タイトルの onclick から ChildModal.open(id)（= グローバルの openChildModal(id)）で開く。
@@ -59,6 +59,7 @@
   let modalOriginal = {};           // モーダル表示時の初期選択値（変更検知用）
   let fieldOptions = null;          // 進捗率・チェック状態の選択肢
   let projectUsers = null;          // 担当者プルダウンの選択肢 [{id, name}]
+  let projectStatuses = null;       // 状態プルダウンの選択肢 [{id, name}]（未対応・処理中・処理済み・完了 など）
 
   const WORKLOG_NAME_KEY = 'bpm2-worklog-name';
   const worklogRowsByPrefix = { dw: [] };   // 表示中の履歴（削除時の確認メッセージ用）
@@ -93,6 +94,20 @@
       const res = await fetch('/api/project-users');
       if (res.ok) projectUsers = await res.json();
     } catch (e) { /* 取得失敗時は担当者を閲覧表示にフォールバック */ }
+  }
+
+  async function loadProjectStatuses() {
+    try {
+      const res = await fetch('/api/statuses');
+      if (res.ok) projectStatuses = await res.json();
+    } catch (e) { /* 取得失敗時は状態を閲覧表示にフォールバック */ }
+  }
+
+  // 状態選択肢を <option> 文字列に変換。現在値は ID で一致させる（名前は表示用）
+  function statusOptionsHTML(statuses, currentId) {
+    return statuses.map(s =>
+      `<option value="${s.id}"${String(s.id) === String(currentId) ? ' selected' : ''}>${escHtml(s.name)}</option>`
+    ).join('');
   }
 
   // 選択肢を <option> 文字列に変換。現在値(name一致)を選択状態にする
@@ -156,10 +171,16 @@
           <span class="m-value mono" id="${id}">${val}</span>
         </div>`
       ).join('') +
-      `<div class="m-field">
-        <span class="m-label">状態</span>
-        <span class="m-value">${escHtml(c.status || '—')}</span>
-      </div>`;
+      // 状態（選択肢取得済みなら編集可能、失敗時は閲覧表示にフォールバック）
+      (projectStatuses
+        ? `<div class="m-field">
+            <span class="m-label">状態</span>
+            <select class="m-select" id="mStatus">${statusOptionsHTML(projectStatuses, c.statusId)}</select>
+          </div>`
+        : `<div class="m-field">
+            <span class="m-label">状態</span>
+            <span class="m-value">${escHtml(c.status || '—')}</span>
+          </div>`);
 
     // 担当者（プルダウン取得済みなら編集可能、失敗時は閲覧表示にフォールバック）
     const assigneeField = projectUsers
@@ -191,7 +212,9 @@
     const progEl     = document.getElementById('mProgress');
     const checkEl    = document.getElementById('mCheckStatus');
     const assigneeEl = document.getElementById('mAssignee');
+    const statusEl   = document.getElementById('mStatus');
     modalOriginal = {
+      status:      statusEl   ? statusEl.value   : null,
       progress:    progEl     ? progEl.value     : null,
       checkStatus: checkEl    ? checkEl.value    : null,
       assignee:    assigneeEl ? assigneeEl.value : null,
@@ -221,9 +244,11 @@
     const startEl    = document.getElementById('mStart');
     const dueEl      = document.getElementById('mDue');
     const assigneeEl = document.getElementById('mAssignee');
+    const statusEl   = document.getElementById('mStatus');
     const payload = {};
     // 変更があった項目だけを送る（同値だと Backlog が "No comment content" で弾くため）
-    if (progEl     && progEl.value     !== modalOriginal.progress)    payload.progressItemId    = parseInt(progEl.value, 10);
+    if (statusEl   && statusEl.value   !== modalOriginal.status)      payload.statusId          = parseInt(statusEl.value, 10);
+    if (progEl    && progEl.value     !== modalOriginal.progress)    payload.progressItemId    = parseInt(progEl.value, 10);
     if (checkEl    && checkEl.value    !== modalOriginal.checkStatus) payload.checkStatusItemId = parseInt(checkEl.value, 10);
     if (startEl    && startEl.value    !== modalOriginal.start)       payload.startDate = startEl.value;
     if (dueEl      && dueEl.value      !== modalOriginal.due)         payload.dueDate   = dueEl.value;
@@ -256,6 +281,7 @@
       }
       setModalMsg('保存しました', 'ok');
       // 保存後の値を初期値として更新（連続保存での誤再送を防止）
+      if (statusEl)   modalOriginal.status      = statusEl.value;
       if (progEl)     modalOriginal.progress    = progEl.value;
       if (checkEl)    modalOriginal.checkStatus = checkEl.value;
       if (startEl)    modalOriginal.start       = startEl.value;
@@ -435,6 +461,7 @@
     injectModalHTML();
     loadFieldOptions();
     loadProjectUsers();
+    loadProjectStatuses();
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') closeChildModal();
     });
