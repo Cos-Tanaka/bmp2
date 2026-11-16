@@ -372,6 +372,15 @@ def get_project_users() -> list:
     return [{"id": u["id"], "name": u["name"]} for u in users]
 
 
+@cached("project_statuses", ttl=3600)
+def get_project_statuses() -> list:
+    """プロジェクトの状態一覧を表示順で返す（詳細モーダルの状態プルダウン用）。
+    Backlog はプロジェクトごとに状態を追加できるため、ID 固定ではなく API から取る。"""
+    statuses = backlog_get(f"/projects/{PROJECT}/statuses")
+    statuses.sort(key=lambda s: s.get("displayOrder", 0))
+    return [{"id": s["id"], "name": s["name"]} for s in statuses]
+
+
 @cached("field_options", ttl=3600)
 def get_field_options() -> dict:
     """
@@ -712,16 +721,30 @@ def api_project_users():
         abort(500, description=str(e))
 
 
+@app.route("/api/statuses")
+def api_statuses():
+    """状態プルダウン用のプロジェクトの状態一覧（未対応・処理中・処理済み・完了 など）を返す。"""
+    try:
+        return jsonify(get_project_statuses())
+    except requests.HTTPError as e:
+        log.error("Backlog API error: %s", e)
+        abort(502, description=f"Backlog API error: {e.response.status_code}")
+    except Exception as e:
+        log.exception("Unexpected error")
+        abort(500, description=str(e))
+
+
 @app.route("/api/issue/<key>", methods=["PATCH"])
 def api_update_issue(key: str):
     """
-    子課題の担当者・進捗率・チェック状態・開始日・期限日を更新する。
+    子課題の担当者・状態・進捗率・チェック状態・開始日・期限日を更新する。
     リクエストボディ(JSON): {
-      "assigneeId": int|""?, "progressItemId": int?, "checkStatusItemId": int?,
+      "assigneeId": int|""?, "statusId": int?, "progressItemId": int?, "checkStatusItemId": int?,
       "startDate": "YYYY-MM-DD"|""?, "dueDate": "YYYY-MM-DD"|""?
     }
-    単一選択リストは項目ID(customField_<id>)、日付は標準フィールドで更新する。
+    単一選択リストは項目ID(customField_<id>)、状態・日付は標準フィールドで更新する。
     assigneeId は空文字で「未割当」にクリアできる（Backlog 側の挙動を実課題で確認済み）。
+    statusId はプロジェクトの状態一覧（/api/statuses）に無い値を 400 で弾く。完了理由は送らない。
     """
     body = request.get_json(silent=True) or {}
     options = get_field_options()
@@ -729,6 +752,14 @@ def api_update_issue(key: str):
     data: dict = {}
     if "assigneeId" in body:
         data["assigneeId"] = body["assigneeId"] or ""
+    if body.get("statusId") is not None:
+        try:
+            status_id = int(body["statusId"])
+        except (TypeError, ValueError):
+            abort(400, description="statusId が不正です")
+        if status_id not in {s["id"] for s in get_project_statuses()}:
+            abort(400, description="statusId がプロジェクトの状態にありません")
+        data["statusId"] = status_id
     if body.get("progressItemId") is not None and "progress" in options:
         data[f"customField_{options['progress']['fieldId']}"] = body["progressItemId"]
     if body.get("checkStatusItemId") is not None and "checkStatus" in options:

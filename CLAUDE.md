@@ -84,7 +84,9 @@ Single-file Flask app with three layers:
    - `format_issue` includes both `assignee` (name) and `assigneeId` (Backlog user id, `None` if unassigned) — the id is what the frontend's assignee `<select>` matches against, since names can collide.
 
 - **`GET /api/project-users`** (`get_project_users`, cached 1h): `[{"id", "name"}, ...]` from `/projects/:key/users`, used to populate the assignee dropdown in the child detail modal.
-- **`PATCH /api/issue/<key>`** also accepts `assigneeId` (int, or `""` to clear to unassigned). Confirmed by live testing against a real issue that Backlog accepts an empty string for `assigneeId` to unassign — this is undocumented in the official API reference. Only child issues get an assignee editor in the UI; parents don't.
+- **`GET /api/statuses`** (`get_project_statuses`, cached 1h): `[{"id", "name"}, ...]` from `/projects/:key/statuses`, sorted by `displayOrder` (this project: 1=未対応 / 2=処理中 / 3=処理済み / 4=完了 — fetched rather than hard-coded because Backlog allows per-project custom statuses). Populates the 状態 dropdown in the child detail modal.
+- **`PATCH /api/issue/<key>`** also accepts `statusId` (int; rejected with 400 unless it is in `get_project_statuses()`). No `resolutionId` is sent. Children are fetched regardless of status, so a child set to 完了 stays in the snapshot (only *parents* with 完了 are dropped).
+- **`PATCH /api/issue/<key>`** also accepts `assigneeId` (int, or `""` to clear to unassigned). Confirmed by live testing against a real issue that Backlog accepts an empty string for `assigneeId` to unassign — this is undocumented in the official API reference. Only child issues get an assignee (or status) editor in the UI; parents don't.
 
 ### Frontend (`frontend/html/index.html`)
 
@@ -102,7 +104,7 @@ Single HTML file, no build step, no framework. All JS is inline.
 
 ### Shared child detail modal (`frontend/html/child-modal.js` / `child-modal.css`)
 
-Used by both `index.html` and `gantt.html` so the same editable modal (assignee/progress/dates/check-status + the `'dw'` worklog panel) doesn't have to be duplicated. Not loaded by `worklog.html`.
+Used by both `index.html` and `gantt.html` so the same editable modal (assignee/status/progress/dates/check-status + the `'dw'` worklog panel) doesn't have to be duplicated. Not loaded by `worklog.html`.
 
 - **Contract**: each page calls `ChildModal.init({ findChild, onDataChanged })` once at startup. `findChild(id)` must return `{ child, parent }` (or `null`) by looking up the page's own data — `index.html`'s `allData`, or `gantt.html`'s `findItem()` result adapted to this shape. `onDataChanged()` is awaited after a successful save/worklog change so the caller can refresh its own view (`fetchData(true)` on both pages).
 - **DOM injection**: `init()` injects the modal's HTML into `document.body` (`document.getElementById('childModal')` guard prevents double-injection) rather than each page hard-coding it — this is why the HTML block was removed from `index.html`.
@@ -173,4 +175,4 @@ One-month table of actual hours per day, in the layout of the team's Excel 実�
 
 ### nginx (`frontend/nginx.conf`)
 
-Reverse-proxies `/api/` to `http://backend:5000`. Everything else is served from the static root with an SPA fallback. `/health` returns a plain 200 for infra checks.
+Reverse-proxies `/api/` to `http://backend:5000`. Everything else is served from the static root with an SPA fallback, with `Cache-Control: no-cache` so browsers revalidate (ETag → 304) instead of heuristically caching shared scripts like `child-modal.js` across deploys. `/health` returns a plain 200 for infra checks.
