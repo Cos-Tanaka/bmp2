@@ -13,12 +13,33 @@ import sqlite3
 import logging
 import datetime
 import threading
+from contextlib import contextmanager
 from functools import wraps
 from flask import Flask, jsonify, abort, request
 import requests
 
 app = Flask(__name__)
+
+# ── API キーの伏せ字 ───────────────────────────────
+# Backlog の API キーは URL のクエリ（?apiKey=...）で送るため、requests の例外メッセージ
+# （HTTPError の "for url: ..."、Timeout/ConnectionError の "with url: ..."）にそのまま入る。
+# ログ（トレースバック含む）と、エラー応答の description の両方でこれを伏せる。
+_API_KEY_RE = re.compile(r"(apiKey=)[^&\s'\"]+")
+
+
+def _redact(text) -> str:
+    return _API_KEY_RE.sub(r"\1***", str(text))
+
+
+class _RedactingFormatter(logging.Formatter):
+    """整形後のログ全体（メッセージ・引数・例外のトレースバック）から API キーを伏せる。"""
+    def format(self, record: logging.LogRecord) -> str:
+        return _redact(super().format(record))
+
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+for _handler in logging.getLogger().handlers:
+    _handler.setFormatter(_RedactingFormatter("%(asctime)s %(levelname)s %(message)s"))
 log = logging.getLogger(__name__)
 
 # ── タイムゾーン ───────────────────────────────────
@@ -39,6 +60,39 @@ BASE_URL   = f"https://{SPACE}/api/v2"
 DB_PATH    = os.environ.get("DB_PATH", "/app/data/worklog.db")
 MAINTENANCE_SHEET_ID  = os.environ.get("MAINTENANCE_SHEET_ID", "")   # 保守作業実績の取り込み元スプレッドシートID
 MAINTENANCE_SHEET_GID = os.environ.get("MAINTENANCE_SHEET_GID", "0")  # 「担当者別保守工数」シートのgid
+
+# ── タイムアウト ─────────────────────────────────
+# 前段の nginx は proxy_read_timeout 30s。これを超えると画面は 504 なのに処理は成功し、
+# 再試行で二重計上になるため、実績の追加・削除は「ロック待ち + Backlog GET + PATCH」を
+# リクエスト開始から WORKLOG_DEADLINE 以内に収める。
+# requests の timeout は「接続」と「受信の途切れ」それぞれの上限で、呼び出し全体の上限ではないため、
+# 固定値ではなく残り時間から (connect, read) を都度計算する（_deadline_timeout）。
+#
+# 実績の追加・削除は Backlog 呼び出しの間 SQLite の書き込みロックを保持する。その保持時間
+# （WORKLOG_BACKLOG_BUDGET）を他の書き込みのロック待ち（SQLITE_TIMEOUT）より短くして、
+# 1 件の実績登録で他の書き込みが database is locked にならないようにする。
+#   ロック待ち 15 秒 + Backlog 10 秒 = 25 秒 < 30 秒
+SQLITE_TIMEOUT         = 15   # 秒。SQLite のロック待ち（busy_timeout）。WORKLOG_BACKLOG_BUDGET より長くする
+BACKLOG_TIMEOUT        = 15   # 秒。Backlog API 呼び出しの既定
+WORKLOG_DEADLINE       = 25   # 秒。実績の追加・削除の、リクエスト開始からの全体の期限
+WORKLOG_BACKLOG_BUDGET = 10   # 秒。実績の追加・削除で書き込みロック保持中に Backlog（GET + PATCH）に使える時間
+BACKLOG_CONNECT_MAX    = 3    # 秒。期限付き呼び出しの接続タイムアウトの上限
+BACKLOG_MIN_REMAINING  = 1    # 秒。残りがこれ未満なら Backlog を呼ばずに失敗させる（Backlog は未変更のまま）
+
+
+class DeadlineExceeded(Exception):
+    """期限までに Backlog を呼ぶ時間が残っていない（Backlog は呼んでいないので未変更）。"""
+
+
+def _deadline_timeout(deadline: float) -> tuple:
+    """期限（time.monotonic() 基準）までの残り時間から requests 用の (connect, read) を返す。
+    connect + read が残り時間を超えないようにする（read は受信の途切れの上限なので、
+    応答を少しずつ送られ続けた場合だけは超え得るが、Backlog の小さな JSON 応答では現実的でない）。"""
+    remaining = deadline - time.monotonic()
+    if remaining < BACKLOG_MIN_REMAINING:
+        raise DeadlineExceeded(f"残り {max(remaining, 0):.1f} 秒")
+    connect = min(BACKLOG_CONNECT_MAX, remaining / 2)
+    return connect, remaining - connect
 
 # ── シンプルインメモリキャッシュ ────────────────────
 # project_id / custom_fields など「めったに変わらない」値の短期キャッシュに使う。
@@ -227,15 +281,44 @@ def _snapshot_refresher() -> None:
             log.exception("Background snapshot refresh failed")
 
 # ── SQLite（実績工数の日々入力履歴）──────────────────
-def get_db() -> sqlite3.Connection:
+@contextmanager
+def get_db():
+    """
+    SQLite 接続を開き、ブロックを正常に抜けたらコミット、例外ならロールバックし、最後に必ず close する。
+    （sqlite3.Connection 自体の with はコミット/ロールバックだけで close しないため、こちらを使う）
+    ブロック内の return はコミット扱い、abort() は例外なのでロールバックになる。
+    """
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=SQLITE_TIMEOUT)
     conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        # synchronous は接続ごとの設定で DB に永続化されないため毎回設定する（WAL での推奨値）
+        conn.execute("PRAGMA synchronous=NORMAL")
+        yield conn
+        conn.commit()
+    except BaseException:
+        # rollback 自体が失敗しても、元の例外（原因）を隠さない
+        try:
+            conn.rollback()
+        except Exception:
+            log.exception("SQLite rollback failed")
+        raise
+    finally:
+        conn.close()
+
+
+def _day_range(day: str) -> tuple:
+    """'YYYY-MM-DD' → (当日, 翌日)。added_at（YYYY-MM-DDTHH:MM:SS）を
+    added_at >= 当日 AND added_at < 翌日 で絞り、date(added_at) = ? と違ってインデックスを効かせる。"""
+    d = datetime.date.fromisoformat(day)
+    return d.isoformat(), (d + datetime.timedelta(days=1)).isoformat()
 
 
 def init_db() -> None:
     with get_db() as conn:
+        # WAL: 読み取りが書き込みのコミットを妨げない（DB ファイルに永続化される）。
+        # トランザクション中は変更できないので最初の文で実行する
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS worklog (
@@ -255,6 +338,11 @@ def init_db() -> None:
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(worklog)").fetchall()]
         if "deleted_at" not in cols:
             conn.execute("ALTER TABLE worklog ADD COLUMN deleted_at TEXT")
+        # /api/worklog/search の parent_title 相関サブクエリ（parent_key ごとの最新行）用。
+        # これが無いと親案件ごとに全件走査になり、検索 1 回が ~8 秒かかって書き込みを待たせていた
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_worklog_parent ON worklog(parent_key, added_at, id)")
+        # 固定作業・保守取込の name + 日付範囲の絞り込み用
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_worklog_name_day ON worklog(name, added_at)")
         # 就業カレンダー（TeamSpirit から書き出した CSV を取り込む。1 日 1 行）
         conn.execute(
             """
@@ -268,17 +356,6 @@ def init_db() -> None:
             )
             """
         )
-
-
-def add_worklog(parent_key, parent_title, child_key, name, hours, added_at=None) -> dict:
-    added_at = added_at or now_jst_iso()
-    with get_db() as conn:
-        cur = conn.execute(
-            "INSERT INTO worklog (parent_key, parent_title, child_key, name, added_at, hours)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (parent_key, parent_title, child_key, name, added_at, hours),
-        )
-        return {"id": cur.lastrowid, "name": name, "added_at": added_at, "hours": hours}
 
 
 def get_worklog(child_key: str) -> list:
@@ -309,22 +386,84 @@ def cached(key: str, ttl: int):
 
 
 # ── Backlog API ヘルパー ────────────────────────────
-def backlog_get(path: str, params: dict = None) -> list | dict:
+def backlog_get(path: str, params: dict = None, timeout: float = BACKLOG_TIMEOUT) -> list | dict:
     """Backlog REST API を GET 呼び出し"""
     p = params or {}
     p["apiKey"] = API_KEY
     url = f"{BASE_URL}{path}"
-    resp = requests.get(url, params=p, timeout=15)
+    resp = requests.get(url, params=p, timeout=timeout)
     resp.raise_for_status()
     return resp.json()
 
 
-def backlog_patch(path: str, data: dict) -> dict:
+def backlog_patch(path: str, data: dict, timeout: float = BACKLOG_TIMEOUT) -> dict:
     """Backlog REST API を PATCH 呼び出し（フォームエンコード）"""
     url = f"{BASE_URL}{path}"
-    resp = requests.patch(url, params={"apiKey": API_KEY}, data=data, timeout=15)
+    resp = requests.patch(url, params={"apiKey": API_KEY}, data=data, timeout=timeout)
     resp.raise_for_status()
     return resp.json()
+
+
+def _patch_not_applied(e: BaseException) -> bool:
+    """PATCH の失敗が「Backlog に届いていない／Backlog が拒否した」と言い切れるか。
+    言い切れないもの（応答待ちのタイムアウト、接続断、5xx、応答の JSON 解析失敗など）は
+    Backlog に反映済みの可能性がある。"""
+    if isinstance(e, (DeadlineExceeded, requests.ConnectTimeout)):
+        return True   # 送信前に失敗
+    if isinstance(e, requests.HTTPError) and e.response is not None:
+        return e.response.status_code < 500   # 4xx は Backlog が拒否（未変更）
+    return False
+
+
+def backlog_add_actual_hours(key: str, delta: float, context: str, deadline: float) -> tuple:
+    """
+    子課題の Backlog actualHours に delta を加算する（負なら減算。0 未満は 0 に丸める）。
+    戻り値: (PATCH レスポンスの課題 JSON, 更新前の actualHours, 更新後の actualHours)
+
+    実績の追加・削除から SQLite の書き込みロックを保持したまま呼ぶ前提なので、
+    GET・PATCH とも deadline（time.monotonic() 基準）までの残り時間をタイムアウトにする。
+    失敗時は例外をそのまま投げる（呼び出し側の SQLite はロールバックされる）。
+    PATCH が Backlog に反映されたか分からない失敗では BPM と差異が出得るので、
+    突合用に課題キーと時間を「Backlog 反映状態不明」の警告ログに残す。
+    """
+    try:
+        issue = backlog_get(f"/issues/{key}", timeout=_deadline_timeout(deadline))
+    except Exception as e:
+        log.warning("Backlog 未反映（実績工数の取得で失敗、Backlog は未変更）: %s %s %+gh: %s",
+                    context, key, delta, e)
+        raise
+    current = issue.get("actualHours") or 0
+    new_total = max(0, round(current + delta, 2))
+    try:
+        updated = backlog_patch(f"/issues/{key}", {"actualHours": new_total},
+                                timeout=_deadline_timeout(deadline))
+    except Exception as e:
+        if _patch_not_applied(e):
+            log.warning("Backlog 未反映（実績工数の更新で失敗、Backlog は未変更）: %s %s %+gh: %s",
+                        context, key, delta, e)
+        else:
+            log.warning("Backlog 反映状態不明（PATCH 送信後に失敗。BPM 側はロールバック）: "
+                        "%s %s %+gh (%s -> %s): %s", context, key, delta, current, new_total, e)
+        raise
+    return updated, current, new_total
+
+
+def _worklog_backlog_deadline(started: float) -> float:
+    """実績の追加・削除で、書き込みロックを取った直後に呼ぶ。Backlog 呼び出しの期限を返す。
+    リクエスト全体の期限（started + WORKLOG_DEADLINE）と、ロック保持時間の上限
+    （今 + WORKLOG_BACKLOG_BUDGET。他の書き込みのロック待ち SQLITE_TIMEOUT より短い）の早い方。"""
+    return min(started + WORKLOG_DEADLINE, time.monotonic() + WORKLOG_BACKLOG_BUDGET)
+
+
+def commit_after_backlog(conn, key: str, delta: float, current, new_total, context: str) -> None:
+    """Backlog の actualHours を更新し終えた後の SQLite コミット。
+    ここで失敗すると Backlog だけが更新済みになるので、突合用の警告ログを残してから例外を投げる。"""
+    try:
+        conn.commit()
+    except Exception as e:
+        log.warning("Backlog 反映済み・BPM 未保存（PATCH 成功後に SQLite のコミットで失敗）: "
+                    "%s %s %+gh (%s -> %s): %s", context, key, delta, current, new_total, e)
+        raise
 
 
 def fetch_issues_all(extra_params: dict = None) -> list:
@@ -649,7 +788,7 @@ def api_issues():
         abort(502, description=f"Backlog API error: {e.response.status_code}")
     except Exception as e:
         log.exception("Unexpected error")
-        abort(500, description=str(e))
+        abort(500, description=_redact(e))
 
 
 def _fetch_raw() -> tuple:
@@ -705,7 +844,7 @@ def api_field_options():
         abort(502, description=f"Backlog API error: {e.response.status_code}")
     except Exception as e:
         log.exception("Unexpected error")
-        abort(500, description=str(e))
+        abort(500, description=_redact(e))
 
 
 @app.route("/api/project-users")
@@ -718,7 +857,7 @@ def api_project_users():
         abort(502, description=f"Backlog API error: {e.response.status_code}")
     except Exception as e:
         log.exception("Unexpected error")
-        abort(500, description=str(e))
+        abort(500, description=_redact(e))
 
 
 @app.route("/api/statuses")
@@ -731,7 +870,7 @@ def api_statuses():
         abort(502, description=f"Backlog API error: {e.response.status_code}")
     except Exception as e:
         log.exception("Unexpected error")
-        abort(500, description=str(e))
+        abort(500, description=_redact(e))
 
 
 @app.route("/api/issue/<key>", methods=["PATCH"])
@@ -783,7 +922,7 @@ def api_update_issue(key: str):
         abort(502, description=f"Backlog API error: {e.response.status_code}")
     except Exception as e:
         log.exception("Unexpected error")
-        abort(500, description=str(e))
+        abort(500, description=_redact(e))
 
 
 @app.route("/api/worklog/<key>", methods=["GET"])
@@ -793,7 +932,7 @@ def api_worklog_list(key: str):
         return jsonify(get_worklog(key))
     except Exception as e:
         log.exception("Unexpected error")
-        abort(500, description=str(e))
+        abort(500, description=_redact(e))
 
 
 @app.route("/api/worklog/<key>", methods=["POST"])
@@ -804,8 +943,11 @@ def api_worklog_add(key: str):
     - バリデーション: hours/name は必須、hours は数値のみ、addedAt は ISO 形式（省略時はサーバー現在時刻）
     - addedAt が日付のみ（YYYY-MM-DD、画面からの通常入力）の場合は、固定作業と同様に
       時刻を登録時刻から借りて補う（集計は date(added_at) の日単位で、時刻は画面に出さない）
-    - Backlog の actualHours に加算し、SQLite に履歴を保存する
+    - SQLite の書き込みロックを先に取って INSERT → Backlog の actualHours に加算 → コミット の順。
+      ロックが取れなければ Backlog に触る前に失敗し、Backlog が失敗すれば INSERT はロールバックされる。
+      （以前は Backlog 加算後に INSERT しており、INSERT のロックエラーで Backlog にだけ加算が残っていた）
     """
+    started = time.monotonic()
     body = request.get_json(silent=True) or {}
     name = (body.get("name") or "").strip()
     parent_key   = (body.get("parentKey") or "").strip()
@@ -834,26 +976,38 @@ def api_worklog_add(key: str):
         if dt.tzinfo is not None:
             dt = dt.astimezone(JST).replace(tzinfo=None)
         added_at = dt.isoformat(timespec="seconds")
+    else:
+        added_at = now_jst_iso()
 
     try:
-        # Backlog の現在の実績工数を取得して加算
-        issue = backlog_get(f"/issues/{key}")
-        current = issue.get("actualHours") or 0
-        new_total = round(current + hours, 2)
-        updated = backlog_patch(f"/issues/{key}", {"actualHours": new_total})
-
-        # SQLite に履歴保存
-        entry = add_worklog(parent_key, parent_title, key, name, hours, added_at)
+        with get_db() as conn:
+            # 書き込みロックを先に確保（取れなければここで失敗し、Backlog には触らない）
+            conn.execute("BEGIN IMMEDIATE")
+            cur = conn.execute(
+                "INSERT INTO worklog (parent_key, parent_title, child_key, name, added_at, hours)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (parent_key, parent_title, key, name, added_at, hours),
+            )
+            entry = {"id": cur.lastrowid, "name": name, "added_at": added_at, "hours": hours}
+            # Backlog の実績工数に加算。失敗時は例外 → INSERT もロールバック。
+            # ロック保持中に「取得→加算→更新」するので、BPM からの同時加算の取りこぼしも防げる
+            context = f"実績追加 name={name}"
+            updated, current, new_total = backlog_add_actual_hours(
+                key, hours, context, _worklog_backlog_deadline(started))
+            commit_after_backlog(conn, key, hours, current, new_total, context)
 
         # ダッシュボードへ即時反映（Backlog 全件取得は挟まない）
         reflect_issue_change(updated)
         return jsonify({"ok": True, "actualHours": new_total, "entry": entry})
+    except DeadlineExceeded:
+        # 警告ログは backlog_add_actual_hours で出し済み（Backlog・SQLite とも未変更）
+        abort(503, description="混み合っているため登録できませんでした。少し待ってからやり直してください")
     except requests.HTTPError as e:
         log.error("Backlog update error: %s", e)
         abort(502, description=f"Backlog API error: {e.response.status_code}")
     except Exception as e:
         log.exception("Unexpected error")
-        abort(500, description=str(e))
+        abort(500, description=_redact(e))
 
 
 @app.route("/api/worklog/entry/<int:entry_id>", methods=["DELETE"])
@@ -863,6 +1017,7 @@ def api_worklog_delete(entry_id: int):
     減算結果が 0 未満になる場合は 0 とする。
     Backlog の更新に失敗した場合は論理削除もロールバックする。
     """
+    started = time.monotonic()
     with get_db() as conn:
         row = conn.execute(
             "SELECT child_key, hours FROM worklog WHERE id = ? AND deleted_at IS NULL",
@@ -873,6 +1028,8 @@ def api_worklog_delete(entry_id: int):
 
     try:
         with get_db() as conn:
+            # 書き込みロックを先に確保（取れなければここで失敗し、Backlog には触らない）
+            conn.execute("BEGIN IMMEDIATE")
             # 論理削除（同時操作で既に削除済みなら中断）
             cur = conn.execute(
                 "UPDATE worklog SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
@@ -882,20 +1039,23 @@ def api_worklog_delete(entry_id: int):
                 return jsonify({"error": "対象の履歴は既に削除されています"}), 409
 
             # Backlog の実績工数から減算（0 未満は 0 に丸め）。失敗時は例外 → 論理削除もロールバック
-            issue = backlog_get(f"/issues/{row['child_key']}")
-            current = issue.get("actualHours") or 0
-            new_total = max(0, round(current - row["hours"], 2))
-            updated = backlog_patch(f"/issues/{row['child_key']}", {"actualHours": new_total})
+            context = f"履歴削除 entry={entry_id}"
+            updated, current, new_total = backlog_add_actual_hours(
+                row["child_key"], -row["hours"], context, _worklog_backlog_deadline(started))
+            commit_after_backlog(conn, row["child_key"], -row["hours"], current, new_total, context)
 
         # ダッシュボードへ即時反映（Backlog 全件取得は挟まない）
         reflect_issue_change(updated)
         return jsonify({"ok": True, "actualHours": new_total})
+    except DeadlineExceeded:
+        # 警告ログは backlog_add_actual_hours で出し済み（Backlog・SQLite とも未変更）
+        abort(503, description="混み合っているため削除できませんでした。少し待ってからやり直してください")
     except requests.HTTPError as e:
         log.error("Backlog update error: %s", e)
         abort(502, description=f"Backlog API error: {e.response.status_code}")
     except Exception as e:
         log.exception("Unexpected error")
-        abort(500, description=str(e))
+        abort(500, description=_redact(e))
 
 
 @app.route("/api/worklog/names", methods=["GET"])
@@ -909,7 +1069,7 @@ def api_worklog_names():
         return jsonify([r["name"] for r in rows])
     except Exception as e:
         log.exception("Unexpected error")
-        abort(500, description=str(e))
+        abort(500, description=_redact(e))
 
 
 @app.route("/api/worklog/search", methods=["GET"])
@@ -920,6 +1080,12 @@ def api_worklog_search():
     """
     name = (request.args.get("name") or "").strip()
     date = (request.args.get("date") or "").strip()
+    day_from = day_to = ""
+    if date:
+        try:
+            day_from, day_to = _day_range(date)
+        except ValueError:
+            abort(400, description="日付の形式が不正です（YYYY-MM-DD）")
     try:
         with get_db() as conn:
             rows = conn.execute(
@@ -934,11 +1100,11 @@ def api_worklog_search():
                 FROM worklog w1
                 WHERE w1.deleted_at IS NULL
                   AND (? = '' OR w1.name = ?)
-                  AND (? = '' OR date(w1.added_at) = ?)
+                  AND (? = '' OR (w1.added_at >= ? AND w1.added_at < ?))
                 GROUP BY w1.parent_key, w1.name, date(w1.added_at)
                 ORDER BY day DESC, w1.parent_key, w1.name
                 """,
-                (name, name, date, date),
+                (name, name, day_from, day_from, day_to),
             ).fetchall()
         result = [{
             "parentKey":   r["parent_key"],
@@ -952,7 +1118,7 @@ def api_worklog_search():
         return jsonify(result)
     except Exception as e:
         log.exception("Unexpected error")
-        abort(500, description=str(e))
+        abort(500, description=_redact(e))
 
 
 # ── 固定作業区分の実績（Backlog に存在しない作業）─────────────
@@ -982,10 +1148,10 @@ def _parse_fixed_target(name_raw, date_raw) -> tuple:
 def _get_fixed_hours(conn, name: str, day: str) -> dict:
     rows = conn.execute(
         "SELECT parent_key, SUM(hours) AS h FROM worklog"
-        " WHERE deleted_at IS NULL AND name = ? AND date(added_at) = ?"
+        " WHERE deleted_at IS NULL AND name = ? AND added_at >= ? AND added_at < ?"
         f" AND parent_key IN ({','.join('?' * len(FIXED_CATEGORIES))})"
         " GROUP BY parent_key",
-        (name, day, *FIXED_CATEGORIES),
+        (name, *_day_range(day), *FIXED_CATEGORIES),
     ).fetchall()
     return {r["parent_key"]: round(r["h"], 2) for r in rows}
 
@@ -1031,13 +1197,15 @@ def api_fixed_worklog_put():
     now = now_jst_iso()
     # 日付の集計は date(added_at) で行うため、時刻は登録時刻を借りて日付だけ指定日にする
     added_at = f"{day}T{now[11:]}"
+    day_from, day_to = _day_range(day)
     try:
         with get_db() as conn:
             for key, h in hours.items():
                 conn.execute(
                     "UPDATE worklog SET deleted_at = ?"
-                    " WHERE deleted_at IS NULL AND name = ? AND date(added_at) = ? AND parent_key = ?",
-                    (now, name, day, key),
+                    " WHERE deleted_at IS NULL AND name = ? AND added_at >= ? AND added_at < ?"
+                    " AND parent_key = ?",
+                    (now, name, day_from, day_to, key),
                 )
                 if h > 0:
                     conn.execute(
@@ -1049,7 +1217,7 @@ def api_fixed_worklog_put():
         return jsonify({"ok": True, "hours": result})
     except Exception as e:
         log.exception("Unexpected error")
-        abort(500, description=str(e))
+        abort(500, description=_redact(e))
 
 
 MAINTENANCE_CATEGORY_KEY   = "FIX-MAINT"
@@ -1128,22 +1296,35 @@ def api_fixed_worklog_maintenance_import():
     """
     保守作業（FIX-MAINT）を Google スプレッドシートから取り込む（SQLite のみ。Backlog には連動しない）。
     連携シートは月度が変わると過去分を参照できなくなるため、取得タイミングはユーザーがボタンで決める。
-    シート上に現れる (氏名, 日付) の組ごとに既存の FIX-MAINT を論理削除してから置き換えるため、
+    シート上に現れる (氏名, 日付) の組の既存 FIX-MAINT を削除してから置き換えるため、
     同じ月を何度取り込んでも二重計上しない。
+    スプレッドシートが正なので、置き換える行は論理削除ではなく物理削除する
+    （論理削除では取込のたびに削除済み行が積み上がり、検索を遅くしていた）。
     """
     text = _fetch_maintenance_csv()
     year, month, day_cols, people, entries = _parse_maintenance_csv(text)
 
     now = now_jst_iso()
     total_hours = 0.0
+    dates = sorted({date_iso for _, date_iso in day_cols})
     try:
         with get_db() as conn:
-            for name in people:
-                for _, date_iso in day_cols:
+            if people and dates:
+                names = sorted(people)
+                in_names = ",".join("?" * len(names))
+                first = datetime.date.fromisoformat(dates[0])
+                contiguous = all(
+                    datetime.date.fromisoformat(d) == first + datetime.timedelta(days=i)
+                    for i, d in enumerate(dates)
+                )
+                # 日付列が連続していれば、その範囲を 1 回の DELETE で置き換える（ロック保持時間の短縮）。
+                # 連続していなければ（列の欠け等）従来どおり日ごとに削除する
+                ranges = [(dates[0], _day_range(dates[-1])[1])] if contiguous else [_day_range(d) for d in dates]
+                for day_from, day_to in ranges:
                     conn.execute(
-                        "UPDATE worklog SET deleted_at = ?"
-                        " WHERE deleted_at IS NULL AND name = ? AND date(added_at) = ? AND parent_key = ?",
-                        (now, name, date_iso, MAINTENANCE_CATEGORY_KEY),
+                        "DELETE FROM worklog WHERE parent_key = ?"
+                        f" AND name IN ({in_names}) AND added_at >= ? AND added_at < ?",
+                        (MAINTENANCE_CATEGORY_KEY, *names, day_from, day_to),
                     )
             for name, date_iso, hours in entries:
                 added_at = f"{date_iso}T{now[11:]}"
@@ -1162,7 +1343,7 @@ def api_fixed_worklog_maintenance_import():
         })
     except Exception as e:
         log.exception("Unexpected error")
-        abort(500, description=str(e))
+        abort(500, description=_redact(e))
 
 
 # ── 就業カレンダー ─────────────────────────────────
