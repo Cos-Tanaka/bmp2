@@ -64,10 +64,35 @@ MAINTENANCE_SHEET_GID = os.environ.get("MAINTENANCE_SHEET_GID", "0")  # 「担�
 # ── タイムアウト ─────────────────────────────────
 # 前段の nginx は proxy_read_timeout 30s。これを超えると画面は 504 なのに処理は成功し、
 # 再試行で二重計上になるため、実績の追加・削除は「ロック待ち + Backlog GET + PATCH」を
-# 30 秒未満に収める（10 + 8 + 8 = 26 秒）。
-SQLITE_TIMEOUT          = 10   # 秒。SQLite のロック待ち（busy_timeout）
-BACKLOG_TIMEOUT         = 15   # 秒。Backlog API 呼び出しの既定
-WORKLOG_BACKLOG_TIMEOUT = 8    # 秒。実績の追加・削除（SQLite の書き込みロック保持中）の Backlog 呼び出し
+# リクエスト開始から WORKLOG_DEADLINE 以内に収める。
+# requests の timeout は「接続」と「受信の途切れ」それぞれの上限で、呼び出し全体の上限ではないため、
+# 固定値ではなく残り時間から (connect, read) を都度計算する（_deadline_timeout）。
+#
+# 実績の追加・削除は Backlog 呼び出しの間 SQLite の書き込みロックを保持する。その保持時間
+# （WORKLOG_BACKLOG_BUDGET）を他の書き込みのロック待ち（SQLITE_TIMEOUT）より短くして、
+# 1 件の実績登録で他の書き込みが database is locked にならないようにする。
+#   ロック待ち 15 秒 + Backlog 10 秒 = 25 秒 < 30 秒
+SQLITE_TIMEOUT         = 15   # 秒。SQLite のロック待ち（busy_timeout）。WORKLOG_BACKLOG_BUDGET より長くする
+BACKLOG_TIMEOUT        = 15   # 秒。Backlog API 呼び出しの既定
+WORKLOG_DEADLINE       = 25   # 秒。実績の追加・削除の、リクエスト開始からの全体の期限
+WORKLOG_BACKLOG_BUDGET = 10   # 秒。実績の追加・削除で書き込みロック保持中に Backlog（GET + PATCH）に使える時間
+BACKLOG_CONNECT_MAX    = 3    # 秒。期限付き呼び出しの接続タイムアウトの上限
+BACKLOG_MIN_REMAINING  = 1    # 秒。残りがこれ未満なら Backlog を呼ばずに失敗させる（Backlog は未変更のまま）
+
+
+class DeadlineExceeded(Exception):
+    """期限までに Backlog を呼ぶ時間が残っていない（Backlog は呼んでいないので未変更）。"""
+
+
+def _deadline_timeout(deadline: float) -> tuple:
+    """期限（time.monotonic() 基準）までの残り時間から requests 用の (connect, read) を返す。
+    connect + read が残り時間を超えないようにする（read は受信の途切れの上限なので、
+    応答を少しずつ送られ続けた場合だけは超え得るが、Backlog の小さな JSON 応答では現実的でない）。"""
+    remaining = deadline - time.monotonic()
+    if remaining < BACKLOG_MIN_REMAINING:
+        raise DeadlineExceeded(f"残り {max(remaining, 0):.1f} 秒")
+    connect = min(BACKLOG_CONNECT_MAX, remaining / 2)
+    return connect, remaining - connect
 
 # ── シンプルインメモリキャッシュ ────────────────────
 # project_id / custom_fields など「めったに変わらない」値の短期キャッシュに使う。
@@ -272,7 +297,11 @@ def get_db():
         yield conn
         conn.commit()
     except BaseException:
-        conn.rollback()
+        # rollback 自体が失敗しても、元の例外（原因）を隠さない
+        try:
+            conn.rollback()
+        except Exception:
+            log.exception("SQLite rollback failed")
         raise
     finally:
         conn.close()
@@ -375,19 +404,31 @@ def backlog_patch(path: str, data: dict, timeout: float = BACKLOG_TIMEOUT) -> di
     return resp.json()
 
 
-def backlog_add_actual_hours(key: str, delta: float, context: str) -> tuple:
+def _patch_not_applied(e: BaseException) -> bool:
+    """PATCH の失敗が「Backlog に届いていない／Backlog が拒否した」と言い切れるか。
+    言い切れないもの（応答待ちのタイムアウト、接続断、5xx、応答の JSON 解析失敗など）は
+    Backlog に反映済みの可能性がある。"""
+    if isinstance(e, (DeadlineExceeded, requests.ConnectTimeout)):
+        return True   # 送信前に失敗
+    if isinstance(e, requests.HTTPError) and e.response is not None:
+        return e.response.status_code < 500   # 4xx は Backlog が拒否（未変更）
+    return False
+
+
+def backlog_add_actual_hours(key: str, delta: float, context: str, deadline: float) -> tuple:
     """
     子課題の Backlog actualHours に delta を加算する（負なら減算。0 未満は 0 に丸める）。
-    戻り値: (PATCH レスポンスの課題 JSON, 更新後の actualHours)
+    戻り値: (PATCH レスポンスの課題 JSON, 更新前の actualHours, 更新後の actualHours)
 
-    実績の追加・削除から SQLite の書き込みロックを保持したまま呼ぶ前提なので、短いタイムアウトを使う。
+    実績の追加・削除から SQLite の書き込みロックを保持したまま呼ぶ前提なので、
+    GET・PATCH とも deadline（time.monotonic() 基準）までの残り時間をタイムアウトにする。
     失敗時は例外をそのまま投げる（呼び出し側の SQLite はロールバックされる）。
-    PATCH の送信後に応答が無かった場合は Backlog に反映されたか分からず、
-    BPM と差異が出得るので、突合用に課題キーと時間を警告ログに残す。
+    PATCH が Backlog に反映されたか分からない失敗では BPM と差異が出得るので、
+    突合用に課題キーと時間を「Backlog 反映状態不明」の警告ログに残す。
     """
     try:
-        issue = backlog_get(f"/issues/{key}", timeout=WORKLOG_BACKLOG_TIMEOUT)
-    except requests.RequestException as e:
+        issue = backlog_get(f"/issues/{key}", timeout=_deadline_timeout(deadline))
+    except Exception as e:
         log.warning("Backlog 未反映（実績工数の取得で失敗、Backlog は未変更）: %s %s %+gh: %s",
                     context, key, delta, e)
         raise
@@ -395,12 +436,34 @@ def backlog_add_actual_hours(key: str, delta: float, context: str) -> tuple:
     new_total = max(0, round(current + delta, 2))
     try:
         updated = backlog_patch(f"/issues/{key}", {"actualHours": new_total},
-                                timeout=WORKLOG_BACKLOG_TIMEOUT)
-    except (requests.Timeout, requests.ConnectionError) as e:
-        log.warning("Backlog 反映状態不明（PATCH 送信後に応答なし。BPM 側はロールバック）: "
+                                timeout=_deadline_timeout(deadline))
+    except Exception as e:
+        if _patch_not_applied(e):
+            log.warning("Backlog 未反映（実績工数の更新で失敗、Backlog は未変更）: %s %s %+gh: %s",
+                        context, key, delta, e)
+        else:
+            log.warning("Backlog 反映状態不明（PATCH 送信後に失敗。BPM 側はロールバック）: "
+                        "%s %s %+gh (%s -> %s): %s", context, key, delta, current, new_total, e)
+        raise
+    return updated, current, new_total
+
+
+def _worklog_backlog_deadline(started: float) -> float:
+    """実績の追加・削除で、書き込みロックを取った直後に呼ぶ。Backlog 呼び出しの期限を返す。
+    リクエスト全体の期限（started + WORKLOG_DEADLINE）と、ロック保持時間の上限
+    （今 + WORKLOG_BACKLOG_BUDGET。他の書き込みのロック待ち SQLITE_TIMEOUT より短い）の早い方。"""
+    return min(started + WORKLOG_DEADLINE, time.monotonic() + WORKLOG_BACKLOG_BUDGET)
+
+
+def commit_after_backlog(conn, key: str, delta: float, current, new_total, context: str) -> None:
+    """Backlog の actualHours を更新し終えた後の SQLite コミット。
+    ここで失敗すると Backlog だけが更新済みになるので、突合用の警告ログを残してから例外を投げる。"""
+    try:
+        conn.commit()
+    except Exception as e:
+        log.warning("Backlog 反映済み・BPM 未保存（PATCH 成功後に SQLite のコミットで失敗）: "
                     "%s %s %+gh (%s -> %s): %s", context, key, delta, current, new_total, e)
         raise
-    return updated, new_total
 
 
 def fetch_issues_all(extra_params: dict = None) -> list:
@@ -884,6 +947,7 @@ def api_worklog_add(key: str):
       ロックが取れなければ Backlog に触る前に失敗し、Backlog が失敗すれば INSERT はロールバックされる。
       （以前は Backlog 加算後に INSERT しており、INSERT のロックエラーで Backlog にだけ加算が残っていた）
     """
+    started = time.monotonic()
     body = request.get_json(silent=True) or {}
     name = (body.get("name") or "").strip()
     parent_key   = (body.get("parentKey") or "").strip()
@@ -927,11 +991,17 @@ def api_worklog_add(key: str):
             entry = {"id": cur.lastrowid, "name": name, "added_at": added_at, "hours": hours}
             # Backlog の実績工数に加算。失敗時は例外 → INSERT もロールバック。
             # ロック保持中に「取得→加算→更新」するので、BPM からの同時加算の取りこぼしも防げる
-            updated, new_total = backlog_add_actual_hours(key, hours, f"実績追加 name={name}")
+            context = f"実績追加 name={name}"
+            updated, current, new_total = backlog_add_actual_hours(
+                key, hours, context, _worklog_backlog_deadline(started))
+            commit_after_backlog(conn, key, hours, current, new_total, context)
 
         # ダッシュボードへ即時反映（Backlog 全件取得は挟まない）
         reflect_issue_change(updated)
         return jsonify({"ok": True, "actualHours": new_total, "entry": entry})
+    except DeadlineExceeded:
+        # 警告ログは backlog_add_actual_hours で出し済み（Backlog・SQLite とも未変更）
+        abort(503, description="混み合っているため登録できませんでした。少し待ってからやり直してください")
     except requests.HTTPError as e:
         log.error("Backlog update error: %s", e)
         abort(502, description=f"Backlog API error: {e.response.status_code}")
@@ -947,6 +1017,7 @@ def api_worklog_delete(entry_id: int):
     減算結果が 0 未満になる場合は 0 とする。
     Backlog の更新に失敗した場合は論理削除もロールバックする。
     """
+    started = time.monotonic()
     with get_db() as conn:
         row = conn.execute(
             "SELECT child_key, hours FROM worklog WHERE id = ? AND deleted_at IS NULL",
@@ -968,12 +1039,17 @@ def api_worklog_delete(entry_id: int):
                 return jsonify({"error": "対象の履歴は既に削除されています"}), 409
 
             # Backlog の実績工数から減算（0 未満は 0 に丸め）。失敗時は例外 → 論理削除もロールバック
-            updated, new_total = backlog_add_actual_hours(
-                row["child_key"], -row["hours"], f"履歴削除 entry={entry_id}")
+            context = f"履歴削除 entry={entry_id}"
+            updated, current, new_total = backlog_add_actual_hours(
+                row["child_key"], -row["hours"], context, _worklog_backlog_deadline(started))
+            commit_after_backlog(conn, row["child_key"], -row["hours"], current, new_total, context)
 
         # ダッシュボードへ即時反映（Backlog 全件取得は挟まない）
         reflect_issue_change(updated)
         return jsonify({"ok": True, "actualHours": new_total})
+    except DeadlineExceeded:
+        # 警告ログは backlog_add_actual_hours で出し済み（Backlog・SQLite とも未変更）
+        abort(503, description="混み合っているため削除できませんでした。少し待ってからやり直してください")
     except requests.HTTPError as e:
         log.error("Backlog update error: %s", e)
         abort(502, description=f"Backlog API error: {e.response.status_code}")
