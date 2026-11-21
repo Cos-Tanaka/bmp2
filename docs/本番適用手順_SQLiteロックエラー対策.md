@@ -132,7 +132,7 @@ docker image tag $(docker compose images -q backend) bpm2-backend:before-sqlite-
 docker image ls | grep bpm
 ```
 
-- イメージ名はプロジェクト名（ディレクトリ名）によって `bpm2-backend` と違う場合がある。`docker image ls` の表示で確認して読み替える
+- イメージ名はプロジェクト名（ディレクトリ名）で決まる。**本番サーバー（`/home/aiadmin/bmp2`）では `bmp2-backend`、ボリュームは `bmp2_bpm-data`**（検証環境は `bpm2-backend` / `bpm2_bpm-data`）。この手順書の `bpm2-backend` は環境に合わせて読み替える
 
 ## 4. コードの取り込み
 
@@ -177,7 +177,8 @@ curl -s -o /dev/null -w 'issues %{http_code} %{time_total}s\n' http://localhost:
 合格の条件:
 
 - 2 つの `sha256sum` が一致する（新しいコードで動いている）
-- `journal_mode` が `wal`、インデックスが 3 本、`/app/data` に `worklog.db-wal` と `worklog.db-shm` がある
+- `journal_mode` が `wal`、インデックスが 3 本
+  - `/app/data` に `worklog.db-wal` / `worklog.db-shm` が無くても問題ない。`get_db()` はリクエストごとに接続を閉じ、最後の接続が閉じると SQLite がこの 2 つを片付けるため（2026-11-21 の本番適用時も無かった）
 - `active hours` が §1.4 と同じ
 - `search` が 200 で、0.1 秒前後（§1.4 の値から大きく短くなる）。`issues` が 200
 
@@ -192,7 +193,8 @@ docker compose exec backend python -c "import sqlite3; c=sqlite3.connect('/app/d
 docker compose exec backend ls -la /app/data
 ```
 
-- 表示される削除件数が、§1.4 の `FIX-MAINT deleted` と同じであること
+- 表示される削除件数が、§1.4 の `FIX-MAINT deleted` と同じであること（§1.4 から §5 までの間に旧コードで保守取込が走ると、その分だけ多くなる）
+- WAL モードでは `VACUUM` の結果がいったん `-wal` に書かれるので、サイズを確認する前に `PRAGMA wal_checkpoint(TRUNCATE)` を実行しておくと確実
 - `VACUUM` だけやり直す場合:
 
 ```bash
@@ -277,4 +279,4 @@ DB の中身に問題がある場合だけ。**バックアップ以降に登録
 
 | 日付 | 実施者 | 結果 | 備考 |
 |---|---|---|---|
-| | | | |
+| 2026-11-21 | tanahiro（Claude Code で実施） | 成功 | 土曜 12:08〜12:15 JST。§4 の `git pull` を §3 より先に行った（コンテナは旧イメージのままだったのでバックアップは有効）。§1.4: `delete`、インデックス 1 本、全 32,152 行、有効 7,416.25h、`FIX-MAINT` 論理削除 28,549、search 8.4 秒。§2: 0 件。§5: ハッシュ一致、`wal`、インデックス 3 本、有効 7,416.25h、search 0.04 秒。§6: 28,549 行削除、DB 4.1MB → 0.75MB、`integrity_check` ok。§7.1: 各画面 200、日別実績 2026-11 の合計 1,693.75h が適用前と一致。§7.2 は実際の入力を待って確認 |
